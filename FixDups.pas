@@ -8,7 +8,7 @@ uses
 const
   ORGPFX : string = 'tmp_';
 
-procedure FixAllMarked;
+procedure FixAllMarked(Sender: TObject);
 function ChangeOriginal(AdsTbl: TTableInf): Boolean;
 function DelOriginalTable(AdsTbl: TTableInf): Boolean;
 
@@ -133,14 +133,19 @@ begin
 
 end;
 
-procedure FieldsInf(AdsTbl: TTableInf);
+procedure GetFieldsInf(AdsTbl: TTableInf);
 var
   i: Integer;
   s: string;
   UFlds: TFieldsInf;
 begin
-  AdsTbl.FieldsInf := Tlist.Create;
+  //AdsTbl.FieldsInf := Tlist.Create;
+  AdsTbl.FieldsInfAds := TACEFieldDefs.Create(AdsTbl.AdsT.Owner);
+
+  AdsTbl.FieldsInf := TList.Create;
+
   AdsTbl.FieldsAI := TStringList.Create;
+
   with dtmdlADS.qAny do begin
     if Active then
       Close;
@@ -161,7 +166,7 @@ begin
 
 end;
 
-function FixTable(AdsTbl: TTableInf): Integer;
+function FixTable(AdsTbl: TTableInf; Sender: TObject): Integer;
 var
   ec : Integer;
   FileSrc,
@@ -171,11 +176,9 @@ var
 begin
   Result := 1;
   try
-    if (dtmdlADS.tblAds.Active) then
-      dtmdlADS.tblAds.Close;
 
+    GetFieldsInf(AdsTbl);
     IndexesInf(AdsTbl);
-    FieldsInf(AdsTbl);
 
     FileSrc := AppPars.Path2Src + AdsTbl.TableName;
     FileDst := AppPars.Path2Tmp + AdsTbl.TableName + '.adt';
@@ -203,7 +206,7 @@ begin
 
 end;
 
-procedure FixAllMarked;
+procedure FixAllMarked(Sender: TObject);
 var
   i: Integer;
 begin
@@ -213,11 +216,20 @@ begin
     while not Eof do begin
       i := i + 1;
       if (dtmdlADS.FSrcMark.AsBoolean = True) then begin
+        if (dtmdlADS.tblAds.Active) then
+          dtmdlADS.tblAds.Close;
+
         TableInf := TTableInf.Create;
+        TableInf.AdsT := dtmdlADS.tblAds;
+        TableInf.Owner := dtmdlADS.tblAds.Owner;
+
+        TableInf.AdsT.TableName := dtmdlADS.FSrcTName.AsString;
+
+
         TableInf.TableName := dtmdlADS.FSrcTName.AsString;
 
         dtmdlADS.mtSrc.Edit;
-        dtmdlADS.FSrcFixCode.AsInteger := FixTable(TableInf);
+        dtmdlADS.FSrcFixCode.AsInteger := FixTable(TableInf, Sender);
         TInfLast := TableInf;
         dtmdlADS.FSrcMark.AsBoolean := False;
         dtmdlADS.mtSrc.Post;
@@ -228,6 +240,8 @@ begin
   end;
 
 end;
+
+
 
 
 // AutoInc => Integer

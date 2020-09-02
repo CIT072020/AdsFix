@@ -72,15 +72,20 @@ type
 type
   // описание ADS-таблицы для восстановления
   TTableInf = class
+  private
+    FOwner : TObject;
+  public
+    AdsT      : TAdsTable;
     TableName : string;
     IndCount  : Integer;
     IndexInf  : TList;
-    FieldsInf : TList;
+    FieldsInf    : TList;
+    FieldsInfAds : TACEFieldDefs;
     // поля с типом autoincrement
     FieldsAI  : TStringList;
     RowsFixed : Integer;
-  public
-    //constructor Create(Owner: TComponent); override;
+    property Owner : TObject read FOwner write FOwner;
+    //constructor Create(Owner: TObject); override;
   end;
 
 type

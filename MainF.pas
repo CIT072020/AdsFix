@@ -216,7 +216,7 @@ begin
   s := IsCorrectTmp(AppPars.Path2Tmp);
   if (Length(s) > 0) then begin
     AppPars.Path2Tmp := s;
-    FixAllMarked;
+    FixAllMarked(Sender);
     if (dtmdlADS.conAdsBase.IsConnected = True) then
       dtmdlADS.conAdsBase.IsConnected := False;
   end;
