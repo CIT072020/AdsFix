@@ -23,7 +23,7 @@ function IsCorrectTmp(Path2Tmp: string): string;
 implementation
 
 uses
-  SysUtils, AdsDAO, AuthF, FixDups;
+  SysUtils, AdsDAO, AuthF, FixDups, ServiceProc;
 
 function IsDictionary(s: string): Boolean;
 begin
@@ -76,6 +76,7 @@ begin
     if (dtmdlADS.conAdsBase.IsConnected = False) then
       dtmdlADS.conAdsBase.IsConnected := True;
     dtmdlADS.SYSTEM_ALIAS := SetSysAlias(dtmdlADS.qAny);
+    AppPars.SysAdsPfx := dtmdlADS.SYSTEM_ALIAS;
     with dtmdlADS.qTablesAll do begin
       Active := false;
       SQL.Clear;

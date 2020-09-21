@@ -6,21 +6,6 @@ uses
   SysUtils, Classes, adsset, adscnnct, DB, adsdata, adsfunc, adstable, ace,
   kbmMemTable, TableUtils, ServiceProc;
 
-const
-  TST_UNKNOWN : Integer = 1;
-  TST_GOOD    : Integer = 2;
-  TST_RECVRD  : Integer = 4;
-  TST_ERRORS  : Integer = 8;
-
-  // сортировка списка таблиц
-  IDX_SRC     : String = 'OnState';
-
-  // алиасы для SQL-запросов поиска дубликатов
-  AL_SRC     : string = 'S';
-  AL_DUP     : string = 'D';
-  AL_DKEY    : string = 'DUPGKEY';
-  AL_DUPCNT  : string = 'DUPCNT';
-  AL_DUPCNTF : string = ',D.DUPCNT,';
 
   //FXDP_DEL_ALL : Integer = 1;
   //FXDP_1_ASIS  : Integer = 2;
@@ -70,29 +55,6 @@ type
   end;
 
 type
-  // Режимы тестирования
-  TestMode = (Simple, Medium, Slow);
-  // Режимы удаления дубликатов
-  TDelDupMode = (DDup_ALL, DDup_EX1, DDup_USel);
-
-
-
-type
-  // Параметры для восстановления
-  TAppPars = class
-    Src      : String;
-    IsDict   : Boolean;
-    Path2Src : String;
-    Path2Tmp : String;
-    TMode    : TestMode;
-    DelDupMode : TDelDupMode;
-    AutoTest : Boolean;
-    // автопоиск наиболее подходящих строк для удаления из дубликатов
-    AutoFix  : Boolean;
-    //FixDupsMode : Integer;
-  end;
-
-type
   // Список таблиц для восстановления
   TSrcTableList = class
     IsDict : Boolean;
@@ -112,26 +74,6 @@ type
     property SrcDict : string read FSrcDict write FSrcDict;
   end;
 
-type
-  // описание одного индекса
-  TIndexInf = class
-    Options: Integer;
-    Expr: string;
-    Fields: TStringList;
-    CommaSet : string;
-    AlsCommaSet : string;
-    EquSet : string;
-    IndFieldsAdr: array of integer;
-  end;
-
-type
-  // описание полей таблицы
-  TFieldsInf = class
-    Name      : string;
-    FieldType : integer;
-    TypeSQL   : string;
-  end;
-
 
 type
   // описание записи в наборе дубликатов
@@ -147,21 +89,24 @@ type
 type
   TdtmdlADS = class(TDataModule)
     conAdsBase: TAdsConnection;
+    tblAds: TAdsTable;
+    dsSrc: TDataSource;
     qTablesAll: TAdsQuery;
     qAny: TAdsQuery;
+
     mtSrc: TkbmMemTable;
     FSrcNpp: TIntegerField;
     FSrcMark: TBooleanField;
     FSrcTName: TStringField;
     FSrcTestCode: TIntegerField;
     FSrcTCaption: TStringField;
-    dsSrc: TDataSource;
-    tblAds: TAdsTable;
     FSrcState: TIntegerField;
     FSrcFixCode: TIntegerField;
+    FSrcAIncs: TIntegerField;
+    FSrcErrNative: TIntegerField;
+
     cnABTmp: TAdsConnection;
     qDst: TAdsQuery;
-    FSrcAIncs: TIntegerField;
     qSrcFields: TAdsQuery;
     qSrcIndexes: TAdsQuery;
     qDupGroups: TAdsQuery;
@@ -179,26 +124,23 @@ type
 function SetSysAlias(QV : TAdsQuery) : string;
 
 //procedure FieldInfByFilter(AdsTbl: TTableInf);
-procedure FieldsInfBySQL(AdsTbl: TTableInf);
-procedure IndexesInf(AdsTbl: TTableInf);
+//procedure FieldsInfBySQL(AdsTbl: TTableInf);
+//procedure IndexesInf(AdsTbl: TTableInf);
 
 function TablesListFromDic(QA: TAdsQuery): string;
 procedure TestSelected(ModeAll : Boolean);
 
 var
-  AppPars : TAppPars;
   dtmdlADS: TdtmdlADS;
   SrcList : TSrcTableList;
 
 implementation
+
 uses
   StrUtils,
   FileUtil,
-  DBFunc,
   FixDups;
 {$R *.dfm}
-
-
 
 // добавление префикса /ANSI_ (начиная с версия 10)
 function SetSysAlias(QV: TAdsQuery): string;
@@ -292,7 +234,7 @@ begin
   end;
 
 end;
-}
+
 
 // сведения о полях одной таблицы (SQL)
 procedure FieldsInfBySQL(AdsTbl: TTableInf);
@@ -338,97 +280,9 @@ begin
   end;
 
 end;
+}
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-procedure ClearFieldInExp(Flds: TStringList);
-var
-  i, j, k: Integer;
-begin
-  for i := 0 to Flds.Count - 1 do begin
-    j := Pos('(', Flds[i]);
-    if (j > 0) then begin
-      Flds[i] := RightStr(Flds[i], j + 1);
-      k := Pos(')', Flds[i]);
-      if (k > 0) then begin
-        Flds[i] := LeftStr(Flds[i], k - 1);
-      end;
-    end;
-  end;
-end;
-
-
-// сведения об индексах одной таблицы (SQL)
-procedure IndexesInf(AdsTbl: TTableInf);
-var
-  i, j: Integer;
-  CommaList: string;
-label
-  QFor;
-begin
-  AdsTbl.IndexInf := TList.Create;
-  with dtmdlADS.qAny do begin
-    if Active then
-      Close;
-    // все уникальные индексы
-    SQL.Text := 'SELECT INDEX_OPTIONS, INDEX_EXPRESSION, PARENT FROM ' +
-      dtmdlADS.SYSTEM_ALIAS + 'INDEXES WHERE (PARENT = ''' + AdsTbl.TableName +
-      ''') AND ((INDEX_OPTIONS & 1) = 1)';
-    Active := True;
-    AdsTbl.IndCount := RecordCount;
-    First;
-    while not Eof do begin
-      UInd := TIndexInf.Create;
-      UInd.Options := FieldByName('INDEX_OPTIONS').AsInteger;
-      //UInd.Expr := FieldByName('INDEX_EXPRESSION').AsInteger;
-      UInd.Fields := TStringList.Create;
-      UInd.Fields.Delimiter := ';';
-      UInd.Fields.DelimitedText := FieldByName('INDEX_EXPRESSION').AsString;
-      ClearFieldInExp(UInd.Fields);
-
-      SetLength(UInd.IndFieldsAdr, UInd.Fields.Count);
-
-      CommaList := '';
-      UInd.AlsCommaSet := '';
-      UInd.EquSet := '';
-      for j := 0 to UInd.Fields.Count - 1 do begin
-        if (j > 0) then begin
-          CommaList := CommaList + ',';
-          UInd.AlsCommaSet := UInd.AlsCommaSet + ',';
-          UInd.EquSet := UInd.EquSet + ' AND ';
-        end;
-
-        CommaList := CommaList + Uind.Fields[j];
-        UInd.AlsCommaSet := UInd.AlsCommaSet + AL_SRC + '.' + Uind.Fields[j];
-        UInd.EquSet := UInd.EquSet + '(' + AL_SRC + '.' + Uind.Fields[j] + '=' + AL_DUP + '.' + Uind.Fields[j] + ')';
-        for i := 0 to AdsTbl.FieldsInfAds.Count - 1 do
-          if (AdsTbl.FieldsInfAds[i].FieldName = UInd.Fields[j]) then begin
-            UInd.IndFieldsAdr[j] := i;
-            goto QFor;
-          end;
-      end;
-QFor:
-      UInd.CommaSet := CommaList;
-
-      AdsTbl.IndexInf.Add(UInd);
-      Next;
-    end;
-
-  end;
-
-end;
 
 
 {
@@ -510,32 +364,11 @@ begin
 end;
 
 
-function Field4Alter(AdsTI: TTableInf): integer;
-var
-  i, j, k, t: Integer;
-  IndInf: TIndexInf;
-begin
-  Result := -1;
-
-  for i := 0 to AdsTI.IndexInf.Count - 1 do begin
-
-    IndInf := AdsTI.IndexInf.Items[i];
-
-    for j := 0 to IndInf.Fields.Count - 1 do begin
-      k := IndInf.IndFieldsAdr[j];
-      t := AdsTI.FieldsInfAds[k].FieldType;
-      if (t in [ADS_INTEGER, ADS_SHORTINT, ADS_AUTOINC]) then begin
-        Result := k;
-        Exit;
-      end;
-    end;
-  end;
-
-end;
 
 
 
 // тестирование одной таблицы на ошибки
+{
 function Test1Table(AdsTI: TTableInf; Check: TestMode): Integer;
 var
   iFld, ec: Integer;
@@ -579,18 +412,6 @@ begin
 
     end;
 
-    case Check of
-      Medium:
-        begin
-
-        end;
-
-      Slow:
-        begin
-
-        end;
-    end;
-
   except
     on E: EADSDatabaseError do begin
       Result := E.ACEErrorCode;
@@ -601,6 +422,7 @@ begin
   end;
 
 end;
+}
 
 procedure TestSelected(ModeAll : Boolean);
 var
@@ -619,8 +441,8 @@ begin
       i := 0;
       while not Eof do begin
         i := i + 1;
-        if ((dtmdlADS.FSrcState.AsInteger = TST_UNKNOWN) AND (ModeAll = True)) OR
-          ((dtmdlADS.FSrcMark.AsBoolean = True) AND (ModeAll = False)) then begin
+        if ((dtmdlADS.FSrcState.AsInteger = TST_UNKNOWN) AND (ModeAll = True))
+          OR ((dtmdlADS.FSrcMark.AsBoolean = True) AND (ModeAll = False)) then begin
 
         TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds);
         //TableInf.TableName := dtmdlADS.FSrcTName.AsString;
@@ -630,10 +452,11 @@ begin
         //TableInf.AdsT.TableName := dtmdlADS.FSrcTName.AsString;
 
           dtmdlADS.mtSrc.Edit;
-          ec := Test1Table(TableInf, AppPars.TMode);
+          ec := TableInf.Test1Table(TableInf, dtmdlADS.qAny, AppPars.TMode);
           dtmdlADS.FSrcTestCode.AsInteger := ec;
           if (ec > 0) then begin
             dtmdlADS.FSrcMark.AsBoolean := True;
+            dtmdlADS.FSrcErrNative.AsInteger := TableInf.ErrInfo.NativeErr;
             ec := TST_ERRORS;
           end
           else begin

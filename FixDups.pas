@@ -404,9 +404,16 @@ end;
 
 
 // вызов метода для кода ошибки
-function ErrorController(AdsTbl: TTableInf; Sender: TObject): Integer;
+function TblErrorController(AdsTbl: TTableInf): Integer;
 begin
 
+  case AdsTbl.ErrInfo.ErrClass of
+    7008,
+    7200, 7207:
+      begin
+        AdsTbl.RowsFixed := Fix7207(AdsTbl, AdsTbl.FileTmp);
+      end;
+  end;
 
 end;
 
@@ -419,49 +426,47 @@ end;
 
 
 
-function FixTable(AdsTbl: TTableInf; Sender: TObject): Integer;
+function PrepTable(AdsTbl: TTableInf): Integer;
 var
-  ec : Integer;
-  FileSrc,
-  FileDst,
-  s : String;
-  ErrInf : TStringList;
+  ec: Integer;
+  FileSrc, FileDst, s: string;
+  ErrInf: TStringList;
 begin
-  Result := 1;
+  Result := 0;
   try
 
-    FieldsInfBySQL(AdsTbl);
-    IndexesInf(AdsTbl);
+    //TTableInf.FieldsInfBySQL(AdsTbl, dtmdlADS.qAny);
+    AdsTbl.FieldsInfo;
+    AdsTbl.IndexesInf(AdsTbl, dtmdlADS.qAny);
 
     FileSrc := AppPars.Path2Src + AdsTbl.TableName;
-    FileDst := AppPars.Path2Tmp + AdsTbl.TableName + '.adt';
+    AdsTbl.FileTmp := AppPars.Path2Tmp + AdsTbl.TableName + '.adt';
 
     if (CopyOneFile(FileSrc + '.adt', AppPars.Path2Tmp) = 0) then begin
-
 
       if FileExists(FileSrc + '.adm') then begin
         if (CopyOneFile(FileSrc + '.adm', AppPars.Path2Tmp) = 0) then begin
         end;
       end;
-      if AdsDDFreeTable(PAnsiChar(FileDst), nil) = AE_FREETABLEFAILED then
+      if AdsDDFreeTable(PAnsiChar(AdsTbl.FileTmp), nil) = AE_FREETABLEFAILED then begin
+        Result := 1;
         ErrInf.Text := 'Error while free Table from datadictionary';
-      AdsTbl.RowsFixed := Fix7207(AdsTbl, FileDst);
-
+      end;
     end;
-    Result := 0;
   except
 
     on E: EADSDatabaseError do begin
+      Result := 1;
       dtmdlADS.FSrcFixCode.AsInteger := E.ACEErrorCode;
-      end;
-
     end;
+
+  end;
 
 end;
 
 procedure FixAllMarked(Sender: TObject);
 var
-  i: Integer;
+  ec, i: Integer;
 begin
   with dtmdlADS.mtSrc do begin
     First;
@@ -475,14 +480,14 @@ begin
         TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds);
         //TableInf.AdsT := dtmdlADS.tblAds;
         //TableInf.Owner := dtmdlADS.tblAds.Owner;
-
         //TableInf.AdsT.TableName := dtmdlADS.FSrcTName.AsString;
-
-
-        //TableInf.TableName := dtmdlADS.FSrcTName.AsString;
+        TableInf.ErrInfo.ErrClass  := dtmdlADS.FSrcTestCode.AsInteger;
+        TableInf.ErrInfo.NativeErr := dtmdlADS.FSrcErrNative.AsInteger;
 
         dtmdlADS.mtSrc.Edit;
-        dtmdlADS.FSrcFixCode.AsInteger := FixTable(TableInf, Sender);
+        ec := PrepTable(TableInf);
+        if (ec = 0) then
+          dtmdlADS.FSrcFixCode.AsInteger := TblErrorController(TableInf);
         TInfLast := TableInf;
         dtmdlADS.FSrcMark.AsBoolean := False;
         dtmdlADS.mtSrc.Post;
@@ -493,6 +498,10 @@ begin
   end;
 
 end;
+
+
+
+
 
 
 

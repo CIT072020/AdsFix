@@ -102,6 +102,9 @@ object dtmdlADS: TdtmdlADS
     object FSrcAIncs: TIntegerField
       FieldName = 'AIncs'
     end
+    object FSrcErrNative: TIntegerField
+      FieldName = 'ErrNative'
+    end
   end
   object dsSrc: TDataSource
     DataSet = mtSrc
@@ -109,6 +112,7 @@ object dtmdlADS: TdtmdlADS
     Top = 160
   end
   object tblAds: TAdsTable
+    AdsConnection = conAdsBase
     AdsTableOptions.AdsRightsCheck = False
     IndexCollationMismatch = icmIgnore
     Left = 40

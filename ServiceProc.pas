@@ -5,10 +5,51 @@ interface
 uses
   Windows, SysUtils, Classes, StrUtils, ShlObj;
 
+const
+  TST_UNKNOWN : Integer = 1;
+  TST_GOOD    : Integer = 2;
+  TST_RECVRD  : Integer = 4;
+  TST_ERRORS  : Integer = 8;
+
+  // сортировка списка таблиц
+  IDX_SRC     : String = 'OnState';
+
+  // алиасы дл€ SQL-запросов поиска дубликатов
+  AL_SRC     : string = 'S';
+  AL_DUP     : string = 'D';
+  AL_DKEY    : string = 'DUPGKEY';
+  AL_DUPCNT  : string = 'DUPCNT';
+  AL_DUPCNTF : string = ',D.DUPCNT,';
+
+type
+  // –ежимы тестировани€
+  TestMode = (Simple, Medium, Slow);
+  // –ежимы удалени€ дубликатов
+  TDelDupMode = (DDup_ALL, DDup_EX1, DDup_USel);
+
+type
+  // ѕараметры дл€ восстановлени€
+  TAppPars = class
+    Src      : String;
+    IsDict   : Boolean;
+    Path2Src : String;
+    Path2Tmp : String;
+    TMode    : TestMode;
+    DelDupMode : TDelDupMode;
+    AutoTest : Boolean;
+    // автопоиск наиболее подход€щих строк дл€ удалени€ из дубликатов
+    AutoFix  : Boolean;
+    //FixDupsMode : Integer;
+    SysAdsPfx : string;
+  end;
+
 
 function Split(const delim, str: string): TStringList;
 function BrowseDir(hOwner: HWND; out SResultDir: string; const SDefaultDir:
   string = ''; const STitle: string = '¬ыберите папку'): Boolean;
+
+var
+  AppPars : TAppPars;
 
 implementation
 
