@@ -116,13 +116,30 @@ object dtmdlADS: TdtmdlADS
   end
   object cnABTmp: TAdsConnection
     AdsServerTypes = [stADS_LOCAL]
-    Left = 240
+    Left = 368
     Top = 32
   end
   object qDst: TAdsQuery
     AdsConnection = cnABTmp
-    Left = 304
+    Left = 424
     Top = 32
+    ParamData = <>
+  end
+  object qSrcFields: TAdsQuery
+    AdsConnection = conAdsBase
+    Left = 168
+    Top = 32
+    ParamData = <>
+  end
+  object qSrcIndexes: TAdsQuery
+    AdsConnection = conAdsBase
+    Left = 176
+    Top = 96
+    ParamData = <>
+  end
+  object qDupGroups: TAdsQuery
+    Left = 368
+    Top = 128
     ParamData = <>
   end
 end

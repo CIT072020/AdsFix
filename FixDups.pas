@@ -4,9 +4,19 @@ interface
 
 uses
   SysUtils, Classes, adsset, adscnnct, DB, adsdata, adsfunc, adstable, ace,
-  kbmMemTable, ServiceProc, AdsDAO;
+  kbmMemTable, ServiceProc, AdsDAO, TableUtils;
+
 const
   ORGPFX : string = 'tmp_';
+
+  FWT_BOOL : Integer = 1;
+  FWT_NUM  : Integer = 3;
+  FWT_DATE : Integer = 5;
+  FWT_STR  : Integer = 30;
+  FWT_BIN  : Integer = 5;
+
+
+
 
 procedure FixAllMarked(Sender: TObject);
 function ChangeOriginal(AdsTbl: TTableInf): Boolean;
@@ -22,10 +32,261 @@ implementation
 uses
   FileUtil;
 
+function EmptyFCond(FieldName : String; FieldType : Integer; IsNOT : Boolean = False) : string;
+var
+  bInBrck : Boolean;
+begin
+  bInBrck := True;
+  Result := '(' + FieldName + ' is NULL)';
+  if  (FieldType in ADS_NUMBERS) then
+    Result := Result + ' OR (' + FieldName + ' <= 0)'
+  else if (FieldType in ADS_STRINGS) then
+    Result := Result + ' OR EMPTY(' + FieldName + ')'
+  else
+    bInBrck := False;
+  if (bInBrck = True) then
+    Result := '(' + Result + ')';
+  if (IsNOT = True) then
+    Result := '( NOT ' + Result + ' )';
+end;
+
+
+function FieldInIndex(FieldName : String) : Boolean;
+begin
+  Result := False;
+end;
+
+
+{-------------------------------------------------------------------------------
+  Procedure: UniqRepeat
+  Построение запроса на поиск совпадающих уникальных ключей вида
+  SELECT f1, f2, ... COUNT(*) as DupCount
+    FROM T GROUP BY 1, 2, ...
+    HAVING (COUNT(*) >= 1)
+  Arguments: AdsTble: string
+  Result:    None
+-------------------------------------------------------------------------------}
+function UniqRepeat(AdsTbl : TTableInf; iI : Integer) : string;
+var
+  IndInf : TIndexInf;
+begin
+  IndInf := AdsTbl.IndexInf.Items[iI];
+{
+  Result := 'SELECT ' + AdsTbl.IndexInf.Items[iI].CommaSet + ' COUNT(*) as DupCount FROM ' +
+    AdsTbl.TableName + ' GROUP BY ' + AdsTbl.IndexInf.Items[iI].CommaSet +
+    ' HAVING (COUNT(*) > 1)';
+}
+  Result := 'SELECT ' + AL_SRC + '.ROWID, ''' + IntToStr(iI) + '''+' +
+    AL_DUP + '.ROWID AS ' + AL_DKEY + AL_DUPCNTF + IndInf.AlsCommaSet +
+    ' FROM ' + AdsTbl.TableName + ' ' + AL_SRC +
+    ' INNER JOIN (SELECT COUNT(*) AS ' + AL_DUPCNT + ',' + IndInf.CommaSet +
+    ' FROM ' + AdsTbl.TableName + ' GROUP BY ' + IndInf.CommaSet +
+    ' HAVING (COUNT(*) > 1) ) ' + AL_DUP +
+    ' ON ' + IndInf.EquSet;
+  Result := Result + ' ORDER BY ' + AL_DKEY;
+end;
+
+
+
+
+
+
+function DelDups4Idx(AdsTbl : TTableInf) : Integer;
+var
+  nRec : Integer;
+  s : string;
+begin
+  s := 'DELETE FROM ' + AdsTbl.TableName + ' WHERE ' + AdsTbl.TableName +
+    '.ROWID IN (' + AdsTbl.List4Del + ')';
+  nRec := dtmdlADS.cnABTmp.Execute(s);
+  Result := nRec;
+end;
+
+
+
+
+
+
+
+// вес одного заполненного поля
+function FieldWeight(QF: TAdsQuery; FieldName: string; FieldType: integer): integer;
+var
+  RowWeight, i: integer;
+begin
+    // BIN data (default)
+  Result := FWT_BIN;
+  if (FieldType in ADS_NUMBERS) then begin
+    Result := FWT_NUM;
+  end
+  else if (FieldType in ADS_BOOL) then begin
+    Result := FWT_BOOL;
+  end
+  else if (FieldType in ADS_STRINGS) then begin
+    Result := FWT_STR;
+  end
+  else if (FieldType in ADS_DATES) then begin
+    Result := FWT_DATE;
+  end;
+end;
+
+
+  function RowFill(AdsTbl: TTableInf; RowID: string; Q1F : TAdsQuery) : integer;
+  var
+    FT, RowWeight, i: integer;
+    sField, sEmpCond, s4All, s: string;
+  begin
+    Result := 0;
+    s4All := ' WHERE (ROWID=''' + RowID + ''') AND ';
+    RowWeight := 0;
+    Q1F.Active := False;
+
+    for i := 0 to AdsTbl.FieldsInfAds.Count - 1 do begin
+
+      if (i > 1) then
+        s := s + ' OR ';
+
+      sField := AdsTbl.FieldsInfAds[i].FieldName;
+      FT := AdsTbl.FieldsInfAds[i].FieldType;
+      sEmpCond := EmptyFCond(sField, FT, True);
+      s := 'SELECT ' + sField + ' FROM ' + AdsTbl.TableName + s4All + sEmpCond;
+      Q1F.SQL.Clear;
+      Q1F.SQL.Add(s);
+      Q1F.Active := True;
+      if (Q1F.RecordCount > 0) then
+        RowWeight := RowWeight + FieldWeight(Q1F, sField, FT);
+
+    end;
+    Result := RowWeight;
+  end;
+
+
+
+procedure MarkAll4Del(Q: TAdsQuery; AdsTbl: TTableInf);
+var
+  i: Integer;
+  s: string;
+  RowInf: TDupRow;
+begin
+  Q.First;
+  i := 0;
+  s := '';
+  while not Q.Eof do begin
+    RowInf := TDupRow.Create;
+    RowInf.DelRow := True;
+    if (i > 0) then begin
+      s := s + ',';
+    end;
+    s := s + '''' + Q.FieldValues['ROWID'] + '''';
+    AdsTbl.DupRows.Add(RowInf);
+    i := i + 1;
+    Q.Next;
+  end;
+  AdsTbl.List4Del := s;
+  AdsTbl.TotalDel := Q.RecordCount;
+end;
+
+
+// оставить не больше одной записи из группы
+procedure LeaveOnlyAllowed(Q: TAdsQuery; AdsTbl: TTableInf; iI: Integer; Q1F : TAdsQuery);
+var
+  i, iMax,
+  iDel,
+  FillMax,
+  j,
+  jLeave : Integer;
+  s: string;
+  RowInf: TDupRow;
+begin
+
+  if (AppPars.DelDupMode = TDelDupMode(DDup_ALL)) then begin
+    MarkAll4Del(Q, AdsTbl);
+    Exit;
+  end;
+
+  j := 0;
+  iDel    := 0;
+  Q.First;
+  while not Q.Eof do begin
+    FillMax := 0;
+    jLeave  := -1;
+    iMax := Q.FieldValues[AL_DUPCNT];
+    for i := 1 to iMax do begin
+      RowInf := TDupRow.Create;
+      RowInf.RowID := Q.FieldValues['ROWID'];
+      RowInf.FillPcnt := RowFill(AdsTbl, RowInf.RowID, Q1F);
+      if (RowInf.FillPcnt > FillMax) then begin
+        jLeave := j;
+        FillMax := RowInf.FillPcnt;
+      end;
+      AdsTbl.DupRows.Add(RowInf);
+      j := j + 1;
+      Q.Next;
+    end;
+
+    //Q.GotoBookmark(BegGr);
+    for i := j - iMax to j - 1 do begin
+      RowInf := AdsTbl.DupRows[i];
+
+      if (i = jLeave) then begin
+        RowInf.DelRow := False;
+      end
+      else begin
+        RowInf.DelRow := True;
+        if (iDel > 0) then begin
+          s := s + ',';
+        end;
+        s := s + '''' + RowInf.RowID + '''';
+        iDel := iDel + 1;
+      end;
+    end;
+
+  end;
+  AdsTbl.List4Del := s;
+  AdsTbl.TotalDel := iDel;
+end;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// оставить не больше одной записи из группы
+procedure DelOtherDups(AdsTbl : TTableInf);
+begin
+
+end;
+
+
+
+
+
+
+
+
+
+
 
 function SQL_7207_SearchEmpty(TblInf : TTableInf; iI : Integer; nMode : Integer) : string;
 var
-  i,
+  i, j, t,
   iMax : Integer;
   s : String;
   IndInf : TIndexInf;
@@ -39,8 +300,9 @@ begin
   for i := 0 to iMax do begin
     if (i > 1) then
       s := s + ' OR ';
-    s := s + 'EMPTY(' + IndInf.Fields.Strings[i] + ') OR (' +
-                        IndInf.Fields.Strings[i] + ' <= 0)';
+    j := IndInf.IndFieldsAdr[i];
+    t := TblInf.FieldsInfAds[j].FieldType;
+    s := s + EmptyFCond(IndInf.Fields.Strings[i], t);
   end;
   Result := Result + s + ')';
 end;
@@ -53,43 +315,69 @@ end;
   Arguments: Table: string
   Result:    None
 -------------------------------------------------------------------------------}
-function Fix7207(TblInf : TTableInf; DstPath: string) : Integer;
+function Fix7207(TblInf: TTableInf; DstPath: string): Integer;
 var
-  j,
-  i : Integer;
-  sExec : string;
+  j, i: Integer;
+  sExec: string;
 begin
-    try
-      //TableName := Table;
-      //Open;
-      Result := 0;
-      //dtmdlADS.qAny.
-      with dtmdlADS.qDst do begin
-        if Active then
-          Close;
-        if (dtmdlADS.cnABTmp.IsConnected) then
-          dtmdlADS.cnABTmp.IsConnected := False;
+  try
+    Result := 0;
+    with dtmdlADS.qDupGroups do begin
+      if Active then
+        Close;
+      if (dtmdlADS.cnABTmp.IsConnected) then
+        dtmdlADS.cnABTmp.IsConnected := False;
 
-        dtmdlADS.cnABTmp.ConnectPath := AppPars.Path2Tmp;
-        dtmdlADS.cnABTmp.IsConnected := True;
-        AdsConnection := dtmdlADS.cnABTmp;
-        for i := 0 to TblInf.IndCount - 1 do begin
-          SQL.Clear;
-          sExec := SQL_7207_SearchEmpty(TblInf, i, 1);
-          SQL.Add(sExec);
-          VerifySQL;
-          j := dtmdlADS.cnABTmp.Execute(sExec);
-          Result := Result + j;
-          //ExecSQL;
-          //Active := True;
-          //Result := Result + RowsAffected;
+      dtmdlADS.cnABTmp.ConnectPath := AppPars.Path2Tmp;
+      dtmdlADS.cnABTmp.IsConnected := True;
+      AdsConnection := dtmdlADS.cnABTmp;
+
+      TblInf.DupRows := TList.Create;
+      //AppPars.FixDupsMode := FXDP_DEL_ALL;
+
+      for i := 0 to TblInf.IndCount - 1 do begin
+          // для всех уникальных индексов таблицы
+
+          // поиск пустых [под]ключей
+        SQL.Clear;
+        sExec := SQL_7207_SearchEmpty(TblInf, i, 1);
+        SQL.Add(sExec);
+        VerifySQL;
+        j := dtmdlADS.cnABTmp.Execute(sExec);
+        TblInf.RowsFixed := TblInf.RowsFixed + j;
+
+          // поиск совпадающих ключей
+        SQL.Clear;
+        sExec := UniqRepeat(TblInf, i);
+        SQL.Add(sExec);
+        VerifySQL;
+        //ExecSQL;
+        Active := True;
+        if (RecordCount > 0) then begin
+
+          // для всех групп с одинаковым значением индекса
+          // оставить одну запись из группы
+          LeaveOnlyAllowed(dtmdlADS.qDupGroups, TblInf, i, dtmdlADS.qDst);
+
+          DelDups4Idx(TblInf);
         end;
+
+
+          //ExecSQL;
+          //Result := Result + RowsAffected;
       end;
 
-    finally
-      sExec := '';
+      // поиск некорректных AUTOINC
+
+
+      DelOtherDups(TblInf);
 
     end;
+
+  finally
+    sExec := '';
+
+  end;
 end;
 
 
@@ -103,68 +391,33 @@ except
 end;
 end;
 
-procedure IndexesInf(AdsTbl : TTableInf);
-var
-  i : Integer;
-  s : string;
-begin
-  AdsTbl.IndexInf := TList.Create;
-  with dtmdlADS.qAny do begin
-    if Active then
-      Close;
-    SQL.Text := 'SELECT INDEX_OPTIONS, INDEX_EXPRESSION, PARENT FROM ' +
-      dtmdlADS.SYSTEM_ALIAS + 'INDEXES WHERE (PARENT = ''' + AdsTbl.TableName +
-      ''') AND ((INDEX_OPTIONS & 1) = 1)';
-    Active := True;
-    AdsTbl.IndCount := RecordCount;
-    First;
-    while not Eof do begin
-      UInd := TIndexInf.Create;
-      UInd.Options := FieldByName('INDEX_OPTIONS').AsInteger;
-      //UInd.Expr := FieldByName('INDEX_EXPRESSION').AsInteger;
-      UInd.Fields := TStringList.Create;
-      UInd.Fields.Delimiter := ';';
-      UInd.Fields.Text := FieldByName('INDEX_EXPRESSION').AsString;
-      AdsTbl.IndexInf.Add(UInd);
-      Next;
-    end;
 
-  end;
+
+
+
+
+
+
+
+
+
+
+
+// вызов метода для кода ошибки
+function ErrorController(AdsTbl: TTableInf; Sender: TObject): Integer;
+begin
+
 
 end;
 
-procedure GetFieldsInf(AdsTbl: TTableInf);
-var
-  i: Integer;
-  s: string;
-  UFlds: TFieldsInf;
-begin
-  //AdsTbl.FieldsInf := Tlist.Create;
-  AdsTbl.FieldsInfAds := TACEFieldDefs.Create(AdsTbl.AdsT.Owner);
 
-  AdsTbl.FieldsInf := TList.Create;
 
-  AdsTbl.FieldsAI := TStringList.Create;
 
-  with dtmdlADS.qAny do begin
-    if Active then
-      Close;
-    SQL.Text := 'SELECT Name, Field_Type FROM ' + dtmdlADS.SYSTEM_ALIAS + 'COLUMNS WHERE (PARENT = ''' + AdsTbl.TableName + ''')';
-    Active := True;
-    First;
-    while not Eof do begin
-      UFlds := TFieldsInf.Create;
-      UFlds.Name := FieldByName('Name').AsString;
-      UFlds.FieldType := FieldByName('Field_Type').AsInteger;
-      if (UFlds.FieldType = FTYPE_AUTOINC) then
-        AdsTbl.FieldsAI.Add(UFlds.Name);
-      AdsTbl.FieldsInf.Add(UFlds);
-      Next;
-    end;
 
-  end;
 
-end;
+
+
+
 
 function FixTable(AdsTbl: TTableInf; Sender: TObject): Integer;
 var
@@ -177,7 +430,7 @@ begin
   Result := 1;
   try
 
-    GetFieldsInf(AdsTbl);
+    FieldsInfBySQL(AdsTbl);
     IndexesInf(AdsTbl);
 
     FileSrc := AppPars.Path2Src + AdsTbl.TableName;
@@ -219,14 +472,14 @@ begin
         if (dtmdlADS.tblAds.Active) then
           dtmdlADS.tblAds.Close;
 
-        TableInf := TTableInf.Create;
-        TableInf.AdsT := dtmdlADS.tblAds;
-        TableInf.Owner := dtmdlADS.tblAds.Owner;
+        TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds);
+        //TableInf.AdsT := dtmdlADS.tblAds;
+        //TableInf.Owner := dtmdlADS.tblAds.Owner;
 
-        TableInf.AdsT.TableName := dtmdlADS.FSrcTName.AsString;
+        //TableInf.AdsT.TableName := dtmdlADS.FSrcTName.AsString;
 
 
-        TableInf.TableName := dtmdlADS.FSrcTName.AsString;
+        //TableInf.TableName := dtmdlADS.FSrcTName.AsString;
 
         dtmdlADS.mtSrc.Edit;
         dtmdlADS.FSrcFixCode.AsInteger := FixTable(TableInf, Sender);
@@ -317,15 +570,19 @@ begin
   if (dtmdlADS.tblAds.Active) then
     dtmdlADS.tblAds.Active := False;
   dtmdlADS.tblAds.TableName := AdsTbl.TableName;
-  dtmdlADS.tblAds.Active := True;
+
+  //dtmdlADS.tblAds.Active := True;
   //
-  dtmdlADS.tblAds.Active := False;
+  //dtmdlADS.tblAds.Active := False;
 
 
   if (ChangeAI2Int(AdsTbl) = True) then begin
     ss := 'INSERT INTO ' + AdsTbl.TableName + ' SELECT * FROM "' + FileDst + '"';
     dtmdlADS.conAdsBase.Execute(ss);
     ChangeInt2AI(AdsTbl);
+
+    dtmdlADS.tblAds.Active := False;
+    dtmdlADS.conAdsBase.Disconnect;
   end;
   Result := True;
 

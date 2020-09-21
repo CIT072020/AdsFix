@@ -39,6 +39,8 @@ type
     btnGetFixed: TButton;
     btnDelOrig: TButton;
     rgTestMode: TRadioGroup;
+    btnTest: TButton;
+    rgDelDupMode: TRadioGroup;
     procedure ChangePath2TmpClick(Sender: TObject; var Handled: Boolean);
     procedure btnTblListClick(Sender: TObject);
     procedure btnDelOrigClick(Sender: TObject);
@@ -50,7 +52,10 @@ type
     procedure cbbPath2SrcDropDown(Sender: TObject);
     procedure btnProcMarkClick(Sender: TObject);
     procedure btnGetFixedClick(Sender: TObject);
+    procedure btnTestClick(Sender: TObject);
     procedure cbbPath2SrcChange(Sender: TObject);
+    procedure chkAutoTestClick(Sender: TObject);
+    procedure rgDelDupModeClick(Sender: TObject);
     procedure rgTestModeClick(Sender: TObject);
 
   private
@@ -73,6 +78,7 @@ uses
 
 procedure TFormMain.FormCreate(Sender: TObject);
 var
+  iDD,
   i : Integer;
   Ini: TIniFile;
 begin
@@ -91,6 +97,14 @@ begin
       AppPars.TMode := TestMode(i)
     else
       AppPars.TMode := Simple;
+    AppPars.AutoTest := Ini.ReadBool('PARAM', 'AutoTest', True);
+
+    iDD := Ini.ReadInteger('PARAM', 'DelDupMode', 0);
+    if (iDD > 0) then
+      AppPars.DelDupMode := TDelDupMode(iDD)
+    else
+      AppPars.DelDupMode := DDup_ALL;
+
 
   finally
     Ini.Free;
@@ -103,7 +117,10 @@ begin
   edtPath2Tmp.Text := AppPars.Path2Tmp;
 
   // по умолчанию - простой режим тестировани€
-  rgTestMode.ItemIndex := i;
+  rgTestMode.ItemIndex   := i;
+  // по умолчанию - удаление всех
+  rgDelDupMode.ItemIndex := iDD;
+  chkAutoTest.Checked    := AppPars.AutoTest;
 end;
 
 procedure TFormMain.FormDestroy(Sender: TObject);
@@ -116,7 +133,9 @@ begin
       Ini.WriteString('PARAM', 'SRCPath', cbbPath2Src.Text);
     if Length(edtPath2Tmp.Text) > 0 then
       Ini.WriteSTring('PARAM', 'TMPPath', edtPath2Tmp.Text);
-      Ini.WriteInteger('PARAM', 'TestMode', Ord(AppPars.TMode));
+    Ini.WriteInteger('PARAM', 'TestMode', Ord(AppPars.TMode));
+    Ini.WriteInteger('PARAM', 'DelDupMode', Ord(AppPars.DelDupMode));
+    Ini.WriteBool('PARAM', 'AutoTest', AppPars.AutoTest);
   finally
     Ini.Free;
   end;
@@ -204,33 +223,66 @@ begin
       AppPars.Path2Src := IncludeTrailingPathDelimiter(cbbPath2Src.Text);
     PrepareList(cbbPath2Src.Text);
     if (chkAutoTest.Checked) then
-      TestSelected;
+      TestSelected(True);
   end;
 end;
 
 
 procedure TFormMain.btnProcMarkClick(Sender: TObject);
 var
-  s : string;
+  s: string;
 begin
-  s := IsCorrectTmp(AppPars.Path2Tmp);
-  if (Length(s) > 0) then begin
-    AppPars.Path2Tmp := s;
-    FixAllMarked(Sender);
-    if (dtmdlADS.conAdsBase.IsConnected = True) then
-      dtmdlADS.conAdsBase.IsConnected := False;
+  TButtonControl(Sender).Enabled := False;
+  try
+    s := IsCorrectTmp(AppPars.Path2Tmp);
+    if (Length(s) > 0) then begin
+      AppPars.Path2Tmp := s;
+      FixAllMarked(Sender);
+      if (dtmdlADS.conAdsBase.IsConnected = True) then
+        dtmdlADS.conAdsBase.IsConnected := False;
+    end;
+  finally
+    TButtonControl(Sender).Enabled := True;
   end;
-
 end;
 
+// «аполнить оригинал исправленными данными
 procedure TFormMain.btnGetFixedClick(Sender: TObject);
 begin
-  ChangeOriginal(TInfLast);
+  TButtonControl(Sender).Enabled := False;
+  try
+    ChangeOriginal(TInfLast);
+  finally
+    TButtonControl(Sender).Enabled := True;
+  end;
 end;
 
+// ”далить копии оригинала
 procedure TFormMain.btnDelOrigClick(Sender: TObject);
 begin
-  DelOriginalTable(TInfLast);
+  TButtonControl(Sender).Enabled := False;
+  try
+    DelOriginalTable(TInfLast);
+  finally
+    TButtonControl(Sender).Enabled := True;
+  end;
+end;
+
+// ѕротестировать выбранные
+procedure TFormMain.btnTestClick(Sender: TObject);
+begin
+  TButtonControl(Sender).Enabled := False;
+  try
+    TestSelected(False);
+  finally
+    TButtonControl(Sender).Enabled := True;
+  end;
+end;
+
+// ”становка/сброс режима автотестировани€
+procedure TFormMain.chkAutoTestClick(Sender: TObject);
+begin
+  AppPars.AutoTest := TCheckBox(Sender).Checked;
 end;
 
 // —мена режима тестировани€
@@ -241,6 +293,13 @@ begin
   end;
 end;
 
+// —мена режима выбора записей дл€ удалени€
+procedure TFormMain.rgDelDupModeClick(Sender: TObject);
+begin
+  if (Assigned(AppPars) and (rgDelDupMode.ItemIndex >= 0)) then begin
+    AppPars.DelDupMode := TDelDupMode(rgDelDupMode.ItemIndex);
+  end;
+end;
 
 end.
 
