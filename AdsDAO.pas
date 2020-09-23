@@ -104,12 +104,14 @@ type
     FSrcFixCode: TIntegerField;
     FSrcAIncs: TIntegerField;
     FSrcErrNative: TIntegerField;
+    FSrcFixInf: TIntegerField;
 
     cnABTmp: TAdsConnection;
     qDst: TAdsQuery;
     qSrcFields: TAdsQuery;
     qSrcIndexes: TAdsQuery;
     qDupGroups: TAdsQuery;
+    tblTmp: TAdsTable;
     procedure DataModuleCreate(Sender: TObject);
   private
     { Private declarations }
@@ -158,8 +160,8 @@ end;
 // установка сортировки списка таблиц по статусу
 procedure TdtmdlADS.DataModuleCreate(Sender: TObject);
 begin
-  dtmdlADS.mtSrc.AddIndex(IDX_SRC, 'State', [ixDescending]);
-  dtmdlADS.mtSrc.IndexName := IDX_SRC;
+  //dtmdlADS.mtSrc.AddIndex(IDX_SRC, 'State', [ixDescending]);
+  //dtmdlADS.mtSrc.IndexName := IDX_SRC;
 end;
 
 //
@@ -167,14 +169,10 @@ procedure TdtmdlADS.AdsConnect(Path2Dic, Login, Password: string);
 begin
     //подключаемся к базе
   dtmdlADS.conAdsBase.IsConnected := False;
-  dtmdlADS.conAdsBase.Username := Login;
-  dtmdlADS.conAdsBase.Password := Password;
+  dtmdlADS.conAdsBase.Username    := Login;
+  dtmdlADS.conAdsBase.Password    := Password;
   dtmdlADS.conAdsBase.ConnectPath := Path2Dic;
-  try
-    dtmdlADS.conAdsBase.IsConnected := True;
-  except
-    RaiseLastOSError();
-  end;
+  dtmdlADS.conAdsBase.IsConnected := True;
 end;
 
 // сведения о полях/индексах всех таблиц базы
@@ -444,7 +442,7 @@ begin
         if ((dtmdlADS.FSrcState.AsInteger = TST_UNKNOWN) AND (ModeAll = True))
           OR ((dtmdlADS.FSrcMark.AsBoolean = True) AND (ModeAll = False)) then begin
 
-        TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds);
+        TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds, dtmdlADS.SYSTEM_ALIAS);
         //TableInf.TableName := dtmdlADS.FSrcTName.AsString;
         //TableInf.AdsT := ;
         //TableInf.Owner := dtmdlADS.tblAds.Owner;
@@ -453,6 +451,8 @@ begin
 
           dtmdlADS.mtSrc.Edit;
           ec := TableInf.Test1Table(TableInf, dtmdlADS.qAny, AppPars.TMode);
+          dtmdlADS.FSrcFixInf.AsVariant := Integer(TableInf);
+          dtmdlADS.FSrcAIncs.AsInteger := TableInf.FieldsAI.Count;
           dtmdlADS.FSrcTestCode.AsInteger := ec;
           if (ec > 0) then begin
             dtmdlADS.FSrcMark.AsBoolean := True;

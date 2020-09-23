@@ -24,12 +24,10 @@ type
     procedure ChBClick(Sender: TObject);
     //procedure FormCreate(Sender: TObject);
     //procedure FormDestroy(Sender: TObject);
-    procedure ParolKeyUp(Sender: TObject; var Key: Word;
-      Shift: TShiftState);
     procedure InitPars(aPars: AParams);
-    function SetResult : AParams;
-    procedure LoginKeyUp(Sender: TObject; var Key: Word;
-      Shift: TShiftState);
+    procedure SetResult(var UL, UP : string);
+    procedure LoginKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
+    procedure ParolKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
   private
     { Private declarations }
   public
@@ -52,13 +50,12 @@ begin
   Parol.Text := aPars[1];
 end;
 
-function TFormAuth.SetResult : AParams;
+procedure TFormAuth.SetResult(var UL, UP : string);
 var
-  aRet : AParams;
+  aPars: AParams;
 begin
-  aRet[0] := Login.Text;
-  aRet[1] := Parol.Text;
-  Result  := aRet;
+  UL := Login.Text;
+  UP := Parol.Text;
 end;
 
 procedure TFormAuth.VxodClick(Sender: TObject);

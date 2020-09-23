@@ -39,7 +39,7 @@ type
   // описание ADS-таблицы для восстановления
   TTableInf = class
   private
-    //FOwner : TObject;
+    FSysPfx   : string;
   public
     AdsT      : TAdsTable;
     TableName : string;
@@ -58,10 +58,10 @@ type
     TotalDel  : Integer;
     RowsFixed : Integer;
     //property Owner : TObject read FOwner write FOwner;
-    constructor Create(TName : string; AT: TAdsTable);
+    constructor Create(TName : string; AT: TAdsTable; AnsiPfx : string);
     destructor Destroy; override;
 
-    class procedure FieldsInfBySQL(AdsTbl: TTableInf; QWork : TAdsQuery);
+    //class procedure FieldsInfBySQL(AdsTbl: TTableInf; QWork : TAdsQuery);
     procedure FieldsInfo;
 
     procedure IndexesInf(AdsTbl: TTableInf; QWork : TAdsQuery);
@@ -73,15 +73,17 @@ implementation
 uses
   FileUtil,
   StrUtils,
+  DB,
   DBFunc;
 
-constructor TTableInf.Create(TName : string; AT: TAdsTable);
+constructor TTableInf.Create(TName : string; AT: TAdsTable; AnsiPfx : string);
 begin
   inherited Create;
 
   Self.TableName := TName;
   Self.AdsT := AT;
   Self.AdsT.TableName := TName;
+  Self.FSysPfx := AnsiPfx;
 
   IndexInf := TList.Create;
   ErrInfo  := TErrInfo.Create;
@@ -96,6 +98,7 @@ end;
 
 
 // сведения о полях одной таблицы (SQL)
+{
 class procedure TTableInf.FieldsInfBySQL(AdsTbl: TTableInf; QWork : TAdsQuery);
 var
   i: Integer;
@@ -128,6 +131,56 @@ begin
       AdsTbl.FieldsInf.Add(UFlds);
 
       ACEField := AdsTbl.FieldsInfAds.Add;
+      ACEField.FieldName := FieldByName('Name').AsString;
+      ACEField.FieldType := FieldByName('Field_Type').AsInteger;
+
+      Next;
+    end;
+
+  end;
+
+end;
+}
+
+
+
+
+// сведения о полях одной таблицы (SQL)
+procedure TTableInf.FieldsInfo;
+var
+  i: Integer;
+  s: string;
+  Q : TAdsQuery;
+  UFlds: TFieldsInf;
+  ACEField: TACEFieldDef;
+begin
+  FieldsInf := TList.Create;
+  FieldsAI := TStringList.Create;
+
+  FieldsInfAds := TACEFieldDefs.Create(AdsT.Owner);
+  Q := TAdsQuery.Create(AdsT.Owner);
+  Q.AdsConnection := AdsT.AdsConnection;
+
+  with Q do begin
+
+    Active := False;
+    SQL.Clear;
+    s := 'SELECT * FROM ' + FSysPfx + 'COLUMNS WHERE PARENT=''' + TableName + '''';
+    SQL.Add(s);
+    Active := True;
+
+    First;
+    while not Eof do begin
+      UFlds := TFieldsInf.Create;
+      UFlds.Name := FieldByName('Name').AsString;
+      UFlds.FieldType := FieldByName('Field_Type').AsInteger;
+      UFlds.TypeSQL   := ArrSootv[UFlds.FieldType].Name;
+      if (UFlds.FieldType = ADS_AUTOINC) then
+        FieldsAI.Add(UFlds.Name);
+
+      FieldsInf.Add(UFlds);
+
+      ACEField := FieldsInfAds.Add;
       ACEField.FieldName := FieldByName('Name').AsString;
       ACEField.FieldType := FieldByName('Field_Type').AsInteger;
 
@@ -170,7 +223,7 @@ begin
       Close;
     // все уникальные индексы
     SQL.Text := 'SELECT INDEX_OPTIONS, INDEX_EXPRESSION, PARENT FROM ' +
-      AppPars.SysAdsPfx + 'INDEXES WHERE (PARENT = ''' + AdsTbl.TableName +
+      FSysPfx + 'INDEXES WHERE (PARENT = ''' + AdsTbl.TableName +
       ''') AND ((INDEX_OPTIONS & 1) = 1)';
     Active := True;
     AdsTbl.IndCount := RecordCount;
@@ -240,6 +293,56 @@ begin
 
 end;
 
+// Чтение всех полей записи
+procedure Read1Rec(Rec: TFields);
+var
+  j: Integer;
+  v: Variant;
+begin
+  for j := 0 to Rec.Count - 1 do begin
+    v := Rec[j].Value;
+  end;
+end;
+
+// Попытка позиционирования и чтения выборки записей таблицы
+procedure PositionSomeRecs(AdsTbl: TAdsTable; Check: TestMode);
+var
+  Step: Integer;
+begin
+  if (AdsTbl.RecordCount > 0) then begin
+    try
+      AdsTbl.First;
+      Read1Rec(AdsTbl.Fields);
+      AdsTbl.Last;
+      Read1Rec(AdsTbl.Fields);
+
+      if (Check = Simple) then begin
+        // Make EoF
+        AdsTbl.Next;
+      end
+      else begin
+        if (Check = Medium) then
+          Step := 500
+        else
+          Step := 1;
+        AdsTbl.First;
+      end;
+      while (not AdsTbl.Eof) do begin
+        AdsTbl.AdsSkip(Step);
+        Read1Rec(AdsTbl.Fields);
+      end;
+
+    except
+    //BAD DATA
+      AdsTbl.Close;
+      raise EADSDatabaseError.create( AdsTbl, UE_BAD_DATA, 'Некорректные данные' );
+
+    end;
+
+  end;
+end;
+
+
 // тестирование одной таблицы на ошибки
 function TTableInf.Test1Table(AdsTI : TTableInf; QWork : TAdsQuery; Check: TestMode): Integer;
 var
@@ -254,15 +357,20 @@ begin
     AdsTI.AdsT.Close;
 
   try
-    FieldsInfBySQL(AdsTI, QWork);
+    //FieldsInfBySQL(AdsTI, QWork);
+    Conn := QWork.AdsConnection;
+    FieldsInfo;
     IndexesInf(AdsTI, QWork);
 
     // Easy Mode and others
     AdsTI.AdsT.Open;
+    PositionSomeRecs(AdsTI.AdsT, Check);
     AdsTI.AdsT.Close;
 
     if (Check = Medium)
       OR (Check = Slow) then begin
+      //s := 'EXECUTE PROCEDURE sp_Reindex(' + AdsTI.TableName + ')';
+      //Conn.Execute(s);
           if (AdsTI.IndCount > 0) then begin
         // есть уникальные индексы
             iFld := Field4Alter(AdsTI);
@@ -270,7 +378,6 @@ begin
               s := AdsTI.FieldsInfAds[iFld].FieldName;
               TypeName := ArrSootv[AdsTI.FieldsInfAds[iFld].FieldType].Name;
               s := 'ALTER TABLE ' + AdsTI.TableName + ' ALTER COLUMN ' + s + ' ' + s + ' ' + TypeName;
-              Conn := QWork.AdsConnection;
               Conn.Execute(s);
               s := AppPars.Path2Src + AdsTI.TableName + '*.BAK';
               DeleteFiles(s);
@@ -278,6 +385,7 @@ begin
           end;
 
       if (Check = Slow) then begin
+        AdsTI.AdsT.PackTable;
 
       end;
 
@@ -295,79 +403,4 @@ begin
 end;
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// сведения о полях одной таблицы (SQL)
-procedure TTableInf.FieldsInfo;
-var
-  i: Integer;
-  s: string;
-  Q : TAdsQuery;
-  UFlds: TFieldsInf;
-  ACEField: TACEFieldDef;
-begin
-  FieldsInf := TList.Create;
-  FieldsAI := TStringList.Create;
-
-  FieldsInfAds := TACEFieldDefs.Create(AdsT.Owner);
-  Q := TAdsQuery.Create(AdsT.Owner);
-  Q.AdsConnection := AdsT.AdsConnection;
-
-  with Q do begin
-
-    Active := False;
-    SQL.Clear;
-    s := 'SELECT * FROM ' + AppPars.SysAdsPfx + 'COLUMNS WHERE PARENT=''' + TableName + '''';
-    SQL.Add(s);
-    Active := True;
-
-    First;
-    while not Eof do begin
-      UFlds := TFieldsInf.Create;
-      UFlds.Name := FieldByName('Name').AsString;
-      UFlds.FieldType := FieldByName('Field_Type').AsInteger;
-      UFlds.TypeSQL   := ArrSootv[UFlds.FieldType].Name;
-      if (UFlds.FieldType = ADS_AUTOINC) then
-        FieldsAI.Add(UFlds.Name);
-
-      FieldsInf.Add(UFlds);
-
-      ACEField := FieldsInfAds.Add;
-      ACEField.FieldName := FieldByName('Name').AsString;
-      ACEField.FieldType := FieldByName('Field_Type').AsInteger;
-
-      Next;
-    end;
-
-  end;
-
-end;
-
-
-
-
 end.
- 

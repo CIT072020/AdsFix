@@ -6,6 +6,11 @@ uses
   Windows, SysUtils, Classes, StrUtils, ShlObj;
 
 const
+  // Начальное значение User Login
+  USER_EMPTY = '!-IM-USER-!';
+  USER_DFLT  = 'AdsSys';
+  PASS_DFLT  = 'sysdba';
+
   TST_UNKNOWN : Integer = 1;
   TST_GOOD    : Integer = 2;
   TST_RECVRD  : Integer = 4;
@@ -21,6 +26,9 @@ const
   AL_DUPCNT  : string = 'DUPCNT';
   AL_DUPCNTF : string = ',D.DUPCNT,';
 
+  // коды ошибок
+  UE_BAD_DATA = 8901;
+
 type
   // Режимы тестирования
   TestMode = (Simple, Medium, Slow);
@@ -34,13 +42,20 @@ type
     IsDict   : Boolean;
     Path2Src : String;
     Path2Tmp : String;
+    // Установленные Login/Password
+    ULogin   : String;
+    UPass    : String;
+    // Режим тестирования
     TMode    : TestMode;
+    // Способ удаления дубликатов
     DelDupMode : TDelDupMode;
+    // Флаг тестирования списка таблиц при получении списка
     AutoTest : Boolean;
     // автопоиск наиболее подходящих строк для удаления из дубликатов
     AutoFix  : Boolean;
     //FixDupsMode : Integer;
     SysAdsPfx : string;
+    
   end;
 
 

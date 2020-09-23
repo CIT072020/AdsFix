@@ -87,38 +87,35 @@ begin
   cbbPath2Src.Items.Add(CONNECTIONTYPE_DIRBROWSE);
 
   AppPars := TAppPars.Create;
+  // Default values
+  AppPars.Path2Tmp := 'C:\Temp\';
+  AppPars.ULogin := USER_EMPTY;
+  // по умолчанию - простой режим тестирования
+  AppPars.TMode := Simple;
+  // по умолчанию - удаление всех
+  AppPars.DelDupMode := DDup_ALL;
+
   Ini := TIniFile.Create(ChangeFileExt(Application.ExeName, '.INI'));
   try
     AppPars.Src := Ini.ReadString('PARAM', 'SRCPath', '');
     cbbPath2Src.Text := AppPars.Src;
     AppPars.Path2Tmp := Ini.ReadString('PARAM', 'TMPPath', '');
+    AppPars.AutoTest := Ini.ReadBool('PARAM', 'AutoTest', True);
     i := Ini.ReadInteger('PARAM', 'TestMode', 0);
     if (i > 0) then
-      AppPars.TMode := TestMode(i)
-    else
-      AppPars.TMode := Simple;
-    AppPars.AutoTest := Ini.ReadBool('PARAM', 'AutoTest', True);
-
+      AppPars.TMode := TestMode(i);
     iDD := Ini.ReadInteger('PARAM', 'DelDupMode', 0);
     if (iDD > 0) then
       AppPars.DelDupMode := TDelDupMode(iDD)
-    else
-      AppPars.DelDupMode := DDup_ALL;
-
-
   finally
     Ini.Free;
   end;
   if Length(cbbPath2Src.Text) > 0 then
     btnTblList.Enabled := True;
 
-  if Length(AppPars.Path2Tmp) = 0 then
-    AppPars.Path2Tmp := 'C:\TEMP\';
   edtPath2Tmp.Text := AppPars.Path2Tmp;
 
-  // по умолчанию - простой режим тестирования
   rgTestMode.ItemIndex   := i;
-  // по умолчанию - удаление всех
   rgDelDupMode.ItemIndex := iDD;
   chkAutoTest.Checked    := AppPars.AutoTest;
 end;
@@ -167,6 +164,7 @@ begin
       OpenDialog.Filter := DATA_DICTIONARY_FILTER;
       if OpenDialog.Execute then begin
         PathNew := OpenDialog.FileName;
+        AppPars.Path2Tmp := USER_EMPTY;
       end
     end
   end;
@@ -174,6 +172,8 @@ begin
   if (Length(PathNew) > 0) then begin
     AppPars.Src := PathNew;
     cbbPath2Src.Text := PathNew;
+    // флаг запроса авторизации?
+    //dtmdlADS.conAdsBase.Username;
   end
   else
     cbbPath2Src.Text := FSavedComboText;

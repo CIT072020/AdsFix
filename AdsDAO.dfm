@@ -61,7 +61,6 @@ object dtmdlADS: TdtmdlADS
         Size = 128
       end>
     IndexDefs = <>
-    SortFields = 'Tested'
     SortOptions = []
     PersistentBackup = False
     ProgressFlags = [mtpcLoad, mtpcSave, mtpcCopy]
@@ -105,6 +104,9 @@ object dtmdlADS: TdtmdlADS
     object FSrcErrNative: TIntegerField
       FieldName = 'ErrNative'
     end
+    object FSrcFixInf: TIntegerField
+      FieldName = 'FixInf'
+    end
   end
   object dsSrc: TDataSource
     DataSet = mtSrc
@@ -145,5 +147,9 @@ object dtmdlADS: TdtmdlADS
     Left = 368
     Top = 128
     ParamData = <>
+  end
+  object tblTmp: TAdsTable
+    Left = 432
+    Top = 128
   end
 end

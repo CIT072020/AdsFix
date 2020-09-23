@@ -34,31 +34,38 @@ end;
 
 function IsCorrectSrc(Path2Dic: string; IsDict: Boolean): Boolean;
 var
+  NeedCnnct: Boolean;
   aPars: AParams;
 begin
   Result := False;
   if (IsDict = True) then begin
     // Through dictionary
-    FormAuth := TFormAuth.Create(nil);
-    aPars[0] := dtmdlADS.conAdsBase.Username;
-    aPars[1] := dtmdlADS.conAdsBase.Password;
-    FormAuth.InitPars(aPars); //
+    if (AppPars.ULogin = USER_EMPTY) then begin
+      FormAuth := TFormAuth.Create(nil);
+      aPars[0] := USER_DFLT;
+      aPars[1] := PASS_DFLT;
+      FormAuth.InitPars(aPars); //
 
-    try
-      if (FormAuth.ShowModal = mrOk) then begin
-        aPars := FormAuth.SetResult();
-        try
-          dtmdlADS.AdsConnect(Path2Dic, aPars[0], aPars[1]);
-          Result := True;
-        except
-          ShowMessage('Неправильное имя пользователя или пароль');
+      try
+        if (FormAuth.ShowModal = mrOk) then begin
+          FormAuth.SetResult(AppPars.ULogin, AppPars.UPass);
         end;
+      finally
+        FormAuth.Free;
+        FormAuth := nil;
       end;
-    finally
-      FormAuth.Free;
-      FormAuth := nil;
+
     end;
 
+    if (AppPars.ULogin <> USER_EMPTY) then begin
+      try
+        dtmdlADS.AdsConnect(Path2Dic, AppPars.ULogin, AppPars.UPass);
+        Result := True;
+      except
+        ShowMessage('Неправильное имя пользователя или пароль');
+        AppPars.ULogin := USER_EMPTY;
+      end;
+    end;
   end
   else begin
     // Свободные таблицы

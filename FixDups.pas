@@ -381,6 +381,41 @@ begin
 end;
 
 
+function Fix8901(TblInf: TTableInf; DstPath: string): Integer;
+var
+  j, i: Integer;
+  sExec: string;
+  TT: TAdsTable;
+begin
+  try
+    Result := 0;
+    if (dtmdlADS.cnABTmp.IsConnected) then
+      dtmdlADS.cnABTmp.IsConnected := False;
+
+    dtmdlADS.cnABTmp.ConnectPath := AppPars.Path2Tmp;
+    dtmdlADS.cnABTmp.IsConnected := True;
+
+    TT := dtmdlADS.tblTmp;
+
+    if (TT.Active = True) then
+      TT.Close;
+    TT.AdsConnection := dtmdlADS.cnABTmp;
+    TT.TableName := TblInf.TableName;
+    TT.Active := True;
+    if (TT.RecordCount > 0) then begin
+
+      for i := 1 to TT.RecordCount do begin
+      end;
+
+    end;
+
+  finally
+    sExec := '';
+
+  end;
+end;
+
+
 function CopyOneFile(const Src, Dst: string): Integer;
 begin
 Result := 0;
@@ -412,6 +447,10 @@ begin
     7200, 7207:
       begin
         AdsTbl.RowsFixed := Fix7207(AdsTbl, AdsTbl.FileTmp);
+      end;
+    UE_BAD_DATA:
+      begin
+        AdsTbl.RowsFixed := Fix8901(AdsTbl, AdsTbl.FileTmp);
       end;
   end;
 
@@ -477,7 +516,7 @@ begin
         if (dtmdlADS.tblAds.Active) then
           dtmdlADS.tblAds.Close;
 
-        TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds);
+        TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds, dtmdlADS.SYSTEM_ALIAS);
         //TableInf.AdsT := dtmdlADS.tblAds;
         //TableInf.Owner := dtmdlADS.tblAds.Owner;
         //TableInf.AdsT.TableName := dtmdlADS.FSrcTName.AsString;
