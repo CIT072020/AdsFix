@@ -4,7 +4,8 @@ interface
 
 uses
   SysUtils, Classes, adsset, adscnnct, DB, adsdata, adsfunc, adstable, ace,
-  kbmMemTable, ServiceProc, AdsDAO, TableUtils;
+  kbmMemTable, EncdDecd,
+  ServiceProc, AdsDAO, TableUtils;
 
 const
   ORGPFX : string = 'tmp_';
@@ -15,6 +16,18 @@ const
   FWT_STR  : Integer = 30;
   FWT_BIN  : Integer = 5;
 
+type
+  TFieldInRec = class
+    RecNo : Integer;
+    BadFieldI : Integer;
+    RowID : string;
+  end;
+
+  TRowIDStruct = record
+    DBID : Integer;
+    TBID : Integer;
+    RecN : Integer;
+  end;
 
 
 
@@ -381,11 +394,75 @@ begin
 end;
 
 
+
+// Чтение всех полей записи с обработкой ошибок
+function Read1RecEx(Rec: TFields) : Integer;
+var
+
+  j: Integer;
+  v: Variant;
+  LJ,
+  LF : TList;
+begin
+  Result := -1;
+  LJ := TList.Create;
+  for j := 0 to Rec.Count - 1 do begin
+    try
+    v := Rec[j].Value;
+    except
+      Result := j;
+      //v := j;
+      //LJ.Add(v);
+    end;
+  end;
+
+  for j := 0 to LJ.Count - 1 do begin
+    end;
+  end;
+
+
+procedure ConvertRecNo2RowID(BRecs: TList; AdsTbl: TAdsTable);
+var
+  j,
+  i: Integer;
+  sID1st,
+  sRec2ID,
+  sRowIDDec, s: string;
+  Q: TAdsQuery;
+  BadFInRec : TFieldInRec;
+  RowStr : TRowIDStruct;
+  Buf : array [0..5] of Char;
+begin
+  if (BRecs.Count > 0) then begin
+    Q := TAdsQuery.Create(AdsTbl.Owner);
+    Q.AdsConnection := AdsTbl.AdsConnection;
+    Q.SQL.Text := 'SELECT TOP 1 ROWID FROM ' + AdsTbl.TableName;
+    Q.Active := True;
+    sID1st := Q.FieldValues['ROWID'];
+    sRowIDDec := DecodeString(sID1st);
+    Move(sRowIDDec, RowStr, 12);
+    for i := 0 to BRecs.Count - 1 do begin
+      sRec2ID := sRowIDDec;
+      //sRec2ID[5] :=
+      //Buf := EncodeString(sRec2ID);
+      BadFInRec.RowID := EncodeString(sRec2ID);
+
+    end;
+  end;
+
+end;
+
+
+// Коррктировка таблицы с поврежденными данными
 function Fix8901(TblInf: TTableInf; DstPath: string): Integer;
 var
+  BadField,
+  Step,
   j, i: Integer;
   sExec: string;
   TT: TAdsTable;
+  BadFInRec : TFieldInRec;
+  BadRecs : TList;
 begin
   try
     Result := 0;
@@ -403,15 +480,33 @@ begin
     TT.TableName := TblInf.TableName;
     TT.Active := True;
     if (TT.RecordCount > 0) then begin
+      BadRecs := TList.Create;
+      i := 0;
+      TT.First;
+      Step := 1;
+      while (not TT.Eof) do begin
+        try
+          BadField := Read1RecEx(TT.Fields);
+          BadFInRec := TFieldInRec.Create;
+          if (BadField >= 0) then begin
+            BadFInRec.RecNo     := TT.RecNo;
+            BadFInRec.BadFieldI := BadField;
+            BadRecs.Add(BadFInRec);
+          end;
+        except
+          i := i + 1;
+          TT.Delete;
 
-      for i := 1 to TT.RecordCount do begin
+        end;
+        TT.AdsSkip(Step);
+
       end;
-
     end;
+    TT.Close;
+    ConvertRecNo2RowID(BadRecs, TT);
 
   finally
     sExec := '';
-
   end;
 end;
 

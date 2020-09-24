@@ -63,6 +63,7 @@ type
   public
     { Public declarations }
   end;
+procedure TestSelected(ModeAll : Boolean);
 
 var
   FormMain : TFormMain;
@@ -70,7 +71,7 @@ var
 implementation
 
 uses
-  UIHelper, AdsDAO, FixDups, ServiceProc;
+  UIHelper, AdsDAO, FixDups, ServiceProc, TableUtils;
 
 
 {$R *.dfm}
@@ -226,6 +227,68 @@ begin
       TestSelected(True);
   end;
 end;
+
+
+
+
+
+
+procedure TestSelected(ModeAll : Boolean);
+var
+  ec, i: Integer;
+begin
+  if (AppPars.IsDict = True) then begin
+    dtmdlADS.mtSrc.DisableControls;
+    with dtmdlADS.mtSrc do begin
+
+    //Close;
+    //Active := True;
+      dtmdlADS.tblAds.AdsConnection := dtmdlADS.conAdsBase;
+      //dtmdlADS.tblAds.ReadOnly := True;
+
+      First;
+      i := 0;
+      while not Eof do begin
+        i := i + 1;
+        if ((dtmdlADS.FSrcState.AsInteger = TST_UNKNOWN) AND (ModeAll = True))
+          OR ((dtmdlADS.FSrcMark.AsBoolean = True) AND (ModeAll = False)) then begin
+
+        TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds, dtmdlADS.SYSTEM_ALIAS);
+        //TableInf.TableName := dtmdlADS.FSrcTName.AsString;
+        //TableInf.AdsT := ;
+        //TableInf.Owner := dtmdlADS.tblAds.Owner;
+
+        //TableInf.AdsT.TableName := dtmdlADS.FSrcTName.AsString;
+
+          dtmdlADS.mtSrc.Edit;
+          ec := TableInf.Test1Table(TableInf, dtmdlADS.qAny, AppPars.TMode);
+          dtmdlADS.FSrcFixInf.AsVariant := Integer(TableInf);
+          dtmdlADS.FSrcAIncs.AsInteger := TableInf.FieldsAI.Count;
+          dtmdlADS.FSrcTestCode.AsInteger := ec;
+          if (ec > 0) then begin
+            dtmdlADS.FSrcMark.AsBoolean := True;
+            dtmdlADS.FSrcErrNative.AsInteger := TableInf.ErrInfo.NativeErr;
+            ec := TST_ERRORS;
+          end
+          else begin
+            dtmdlADS.FSrcMark.AsBoolean := False;
+            ec := TST_GOOD;
+            end;
+          dtmdlADS.FSrcState.AsInteger := ec;
+          dtmdlADS.mtSrc.Post;
+        end;
+        Next;
+      end;
+      First;
+
+    end;
+    dtmdlADS.mtSrc.EnableControls;
+
+  end;
+
+end;
+
+
 
 
 procedure TFormMain.btnProcMarkClick(Sender: TObject);

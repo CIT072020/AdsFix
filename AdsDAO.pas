@@ -4,7 +4,7 @@ interface
 
 uses
   SysUtils, Classes, adsset, adscnnct, DB, adsdata, adsfunc, adstable, ace,
-  kbmMemTable, TableUtils, ServiceProc;
+  kbmMemTable, ServiceProc;
 
 
   //FXDP_DEL_ALL : Integer = 1;
@@ -124,13 +124,8 @@ type
   end;
 
 function SetSysAlias(QV : TAdsQuery) : string;
-
-//procedure FieldInfByFilter(AdsTbl: TTableInf);
-//procedure FieldsInfBySQL(AdsTbl: TTableInf);
-//procedure IndexesInf(AdsTbl: TTableInf);
-
-function TablesListFromDic(QA: TAdsQuery): string;
-procedure TestSelected(ModeAll : Boolean);
+procedure Read1Rec(Rec: TFields);
+procedure PrepareList(Path2Dic: string);
 
 var
   dtmdlADS: TdtmdlADS;
@@ -174,6 +169,18 @@ begin
   dtmdlADS.conAdsBase.ConnectPath := Path2Dic;
   dtmdlADS.conAdsBase.IsConnected := True;
 end;
+
+// Чтение всех полей записи
+procedure Read1Rec(Rec: TFields);
+var
+  j: Integer;
+  v: Variant;
+begin
+  for j := 0 to Rec.Count - 1 do begin
+    v := Rec[j].Value;
+  end;
+end;
+
 
 // сведения о полях/индексах всех таблиц базы
 {
@@ -319,50 +326,6 @@ end;
 }
 
 
-function TablesListFromDic(QA: TAdsQuery): string;
-var
-  i: Integer;
-  s: string;
-  TblCapts: TStringList;
-begin
-  with QA do begin
-    //TblCapts := TStringList.Create;
-    //TblCapts.Delimiter := '.';
-    dtmdlADS.mtSrc.Close;
-    dtmdlADS.mtSrc.Active := True;
-
-    First;
-    i := 0;
-    while not Eof do begin
-      i := i + 1;
-      dtmdlADS.mtSrc.Append;
-      dtmdlADS.FSrcNpp.AsInteger := i;
-      dtmdlADS.FSrcMark.AsBoolean := False;
-      dtmdlADS.FSrcTName.AsString := FieldByName('NAME').AsString;
-      s := FieldByName('COMMENT').AsString;
-      if (Length(s) > 0) then begin
-        TblCapts := Split('.', s);
-        //TblCapts.Text := s;
-        s := TblCapts[TblCapts.Count - 1];
-      end
-      else
-        s := '???';
-
-      dtmdlADS.FSrcTCaption.AsString := s;
-      dtmdlADS.FSrcTestCode.AsInteger := 0;
-      dtmdlADS.FSrcState.AsInteger := TST_UNKNOWN;
-
-      dtmdlADS.mtSrc.Post;
-      Next;
-    end;
-  end;
-
-  //SrcFieldsIndexes;
-
-end;
-
-
-
 
 
 // тестирование одной таблицы на ошибки
@@ -422,60 +385,74 @@ begin
 end;
 }
 
-procedure TestSelected(ModeAll : Boolean);
+function TablesListFromDic(QA: TAdsQuery): string;
 var
-  ec, i: Integer;
+  i: Integer;
+  s: string;
+  TblCapts: TStringList;
+begin
+  with QA do begin
+    //TblCapts := TStringList.Create;
+    //TblCapts.Delimiter := '.';
+    dtmdlADS.mtSrc.Close;
+    dtmdlADS.mtSrc.Active := True;
+
+    First;
+    i := 0;
+    while not Eof do begin
+      i := i + 1;
+      dtmdlADS.mtSrc.Append;
+      dtmdlADS.FSrcNpp.AsInteger := i;
+      dtmdlADS.FSrcMark.AsBoolean := False;
+      dtmdlADS.FSrcTName.AsString := FieldByName('NAME').AsString;
+      s := FieldByName('COMMENT').AsString;
+      if (Length(s) > 0) then begin
+        TblCapts := Split('.', s);
+        //TblCapts.Text := s;
+        s := TblCapts[TblCapts.Count - 1];
+      end
+      else
+        s := '???';
+
+      dtmdlADS.FSrcTCaption.AsString := s;
+      dtmdlADS.FSrcTestCode.AsInteger := 0;
+      dtmdlADS.FSrcState.AsInteger := TST_UNKNOWN;
+
+      dtmdlADS.mtSrc.Post;
+      Next;
+    end;
+  end;
+
+  //SrcFieldsIndexes;
+
+end;
+
+
+
+procedure PrepareList(Path2Dic: string);
+//var
+  //aPars: AParams;
 begin
   if (AppPars.IsDict = True) then begin
-    dtmdlADS.mtSrc.DisableControls;
-    with dtmdlADS.mtSrc do begin
+    // Through dictionary
 
-    //Close;
-    //Active := True;
-      dtmdlADS.tblAds.AdsConnection := dtmdlADS.conAdsBase;
-      //dtmdlADS.tblAds.ReadOnly := True;
-
-      First;
-      i := 0;
-      while not Eof do begin
-        i := i + 1;
-        if ((dtmdlADS.FSrcState.AsInteger = TST_UNKNOWN) AND (ModeAll = True))
-          OR ((dtmdlADS.FSrcMark.AsBoolean = True) AND (ModeAll = False)) then begin
-
-        TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds, dtmdlADS.SYSTEM_ALIAS);
-        //TableInf.TableName := dtmdlADS.FSrcTName.AsString;
-        //TableInf.AdsT := ;
-        //TableInf.Owner := dtmdlADS.tblAds.Owner;
-
-        //TableInf.AdsT.TableName := dtmdlADS.FSrcTName.AsString;
-
-          dtmdlADS.mtSrc.Edit;
-          ec := TableInf.Test1Table(TableInf, dtmdlADS.qAny, AppPars.TMode);
-          dtmdlADS.FSrcFixInf.AsVariant := Integer(TableInf);
-          dtmdlADS.FSrcAIncs.AsInteger := TableInf.FieldsAI.Count;
-          dtmdlADS.FSrcTestCode.AsInteger := ec;
-          if (ec > 0) then begin
-            dtmdlADS.FSrcMark.AsBoolean := True;
-            dtmdlADS.FSrcErrNative.AsInteger := TableInf.ErrInfo.NativeErr;
-            ec := TST_ERRORS;
-          end
-          else begin
-            dtmdlADS.FSrcMark.AsBoolean := False;
-            ec := TST_GOOD;
-            end;
-          dtmdlADS.FSrcState.AsInteger := ec;
-          dtmdlADS.mtSrc.Post;
-        end;
-        Next;
-      end;
-      First;
-
+    if (dtmdlADS.conAdsBase.IsConnected = False) then
+      dtmdlADS.conAdsBase.IsConnected := True;
+    dtmdlADS.SYSTEM_ALIAS := SetSysAlias(dtmdlADS.qAny);
+    AppPars.SysAdsPfx := dtmdlADS.SYSTEM_ALIAS;
+    with dtmdlADS.qTablesAll do begin
+      Active := false;
+      SQL.Clear;
+      SQL.Add('SELECT * FROM ' + dtmdlADS.SYSTEM_ALIAS + 'TABLES');
+      Active := true;
     end;
-    dtmdlADS.mtSrc.EnableControls;
+    TablesListFromDic(dtmdlADS.qTablesAll);
+  end
+  else begin
+    // Free tables
 
   end;
 
 end;
-
 
 end.

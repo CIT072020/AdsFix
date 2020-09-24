@@ -5,7 +5,7 @@ interface
 uses
   Classes,
   AdsData, Ace, AdsTable, AdsCnnct,
-  ServiceProc;
+  ServiceProc, AdsDAO;
 
 type
   // описание полей таблицы
@@ -293,16 +293,6 @@ begin
 
 end;
 
-// Чтение всех полей записи
-procedure Read1Rec(Rec: TFields);
-var
-  j: Integer;
-  v: Variant;
-begin
-  for j := 0 to Rec.Count - 1 do begin
-    v := Rec[j].Value;
-  end;
-end;
 
 // Попытка позиционирования и чтения выборки записей таблицы
 procedure PositionSomeRecs(AdsTbl: TAdsTable; Check: TestMode);

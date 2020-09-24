@@ -149,6 +149,7 @@ object dtmdlADS: TdtmdlADS
     ParamData = <>
   end
   object tblTmp: TAdsTable
+    AdsConnection = cnABTmp
     Left = 432
     Top = 128
   end
