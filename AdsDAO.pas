@@ -155,8 +155,8 @@ end;
 // установка сортировки списка таблиц по статусу
 procedure TdtmdlADS.DataModuleCreate(Sender: TObject);
 begin
-  //dtmdlADS.mtSrc.AddIndex(IDX_SRC, 'State', [ixDescending]);
-  //dtmdlADS.mtSrc.IndexName := IDX_SRC;
+  dtmdlADS.mtSrc.AddIndex(IDX_SRC, 'State', [ixDescending]);
+  dtmdlADS.mtSrc.IndexName := IDX_SRC;
 end;
 
 //

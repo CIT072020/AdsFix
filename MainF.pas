@@ -290,7 +290,7 @@ end;
 
 
 
-
+// Исправить помеченные
 procedure TFormMain.btnProcMarkClick(Sender: TObject);
 var
   s: string;

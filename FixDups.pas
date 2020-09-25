@@ -420,41 +420,50 @@ begin
     end;
   end;
 
-
-procedure ConvertRecNo2RowID(BRecs: TList; AdsTbl: TAdsTable);
+// Список ROWIDs с поврежденными данными (из списка Recno)
+function ConvertRecNo2RowID(BRecs: TList; AdsTbl: TAdsTable): string;
 var
-  j,
-  i: Integer;
-  sID1st,
-  sRec2ID,
-  sRowIDDec, s: string;
+  b, i: Integer;
+  sID1st: string;
   Q: TAdsQuery;
-  BadFInRec : TFieldInRec;
-  RowStr : TRowIDStruct;
-  Buf : array [0..5] of Char;
+  BadFInRec: TFieldInRec;
 begin
+  Result := '';
   if (BRecs.Count > 0) then begin
     Q := TAdsQuery.Create(AdsTbl.Owner);
     Q.AdsConnection := AdsTbl.AdsConnection;
-    Q.SQL.Text := 'SELECT TOP 1 ROWID FROM ' + AdsTbl.TableName;
-    Q.Active := True;
-    sID1st := Q.FieldValues['ROWID'];
-    sRowIDDec := DecodeString(sID1st);
-    Move(sRowIDDec, RowStr, 12);
+    b := 0;
     for i := 0 to BRecs.Count - 1 do begin
-      sRec2ID := sRowIDDec;
-      //sRec2ID[5] :=
-      //Buf := EncodeString(sRec2ID);
-      BadFInRec.RowID := EncodeString(sRec2ID);
+      BadFInRec := TFieldInRec(BRecs[i]);
 
+      Q.Active := False;
+      Q.SQL.Text := 'SELECT TOP 1 START AT ' + IntToStr(BadFInRec.Recno) + ' ROWID FROM ' + AdsTbl.TableName;
+      Q.Active := True;
+      if (Q.RecordCount > 0) then begin
+        sID1st := Q.FieldValues['ROWID'];
+        if (Length(sID1st) > 0) then begin
+          b := b + 1;
+          BadFInRec.RowID := sID1st;
+          if (b > 1) then
+            Result := Result + ',';
+          Result := Result + '''' + sID1st + '''';
+        end;
+
+      end;
     end;
   end;
 
 end;
 
 
+
+
+
+
+
+
 // Коррктировка таблицы с поврежденными данными
-function Fix8901(TblInf: TTableInf; DstPath: string): Integer;
+function Fix8901(SrcTblInf: TTableInf; DstPath: string): Integer;
 var
   BadField,
   Step,
@@ -477,7 +486,7 @@ begin
     if (TT.Active = True) then
       TT.Close;
     TT.AdsConnection := dtmdlADS.cnABTmp;
-    TT.TableName := TblInf.TableName;
+    TT.TableName := SrcTblInf.TableName;
     TT.Active := True;
     if (TT.RecordCount > 0) then begin
       BadRecs := TList.Create;
@@ -485,17 +494,17 @@ begin
       TT.First;
       Step := 1;
       while (not TT.Eof) do begin
+        i := i + 1;
         try
           BadField := Read1RecEx(TT.Fields);
-          BadFInRec := TFieldInRec.Create;
           if (BadField >= 0) then begin
-            BadFInRec.RecNo     := TT.RecNo;
+            BadFInRec := TFieldInRec.Create;
+            //BadFInRec.RecNo     := TT.RecNo;
+            BadFInRec.RecNo     := i;
             BadFInRec.BadFieldI := BadField;
             BadRecs.Add(BadFInRec);
           end;
         except
-          i := i + 1;
-          TT.Delete;
 
         end;
         TT.AdsSkip(Step);
@@ -503,7 +512,7 @@ begin
       end;
     end;
     TT.Close;
-    ConvertRecNo2RowID(BadRecs, TT);
+    SrcTblInf.DmgdRIDs := ConvertRecNo2RowID(BadRecs, TT);
 
   finally
     sExec := '';
@@ -719,13 +728,18 @@ begin
   //dtmdlADS.tblAds.Active := False;
 
 
-  if (ChangeAI2Int(AdsTbl) = True) then begin
-    ss := 'INSERT INTO ' + AdsTbl.TableName + ' SELECT * FROM "' + FileDst + '"';
-    dtmdlADS.conAdsBase.Execute(ss);
-    ChangeInt2AI(AdsTbl);
+  try
+    if (ChangeAI2Int(AdsTbl) = True) then begin
+      ss := 'INSERT INTO ' + AdsTbl.TableName + ' SELECT * FROM "' + FileDst + '"';
+      if (Length(AdsTbl.DmgdRIDs) > 0) then
+        ss := ss + ' WHERE ROWID NOT IN (' + AdsTbl.DmgdRIDs + ')';
+      dtmdlADS.conAdsBase.Execute(ss);
+      ChangeInt2AI(AdsTbl);
 
-    dtmdlADS.tblAds.Active := False;
-    dtmdlADS.conAdsBase.Disconnect;
+      dtmdlADS.tblAds.Active := False;
+      dtmdlADS.conAdsBase.Disconnect;
+    end;
+  except
   end;
   Result := True;
 

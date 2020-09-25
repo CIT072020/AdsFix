@@ -55,6 +55,8 @@ type
 
     DupRows   : TList;
     List4Del  : String;
+
+    DmgdRIDs  : string;
     TotalDel  : Integer;
     RowsFixed : Integer;
     //property Owner : TObject read FOwner write FOwner;
