@@ -14,7 +14,7 @@ type
     FieldType : integer;
     TypeSQL   : string;
   end;
-  
+
 type
   // описание одного индекса
   TIndexInf = class
@@ -41,12 +41,15 @@ type
   private
     FSysPfx   : string;
   public
+    // Объект TAdsTable
     AdsT      : TAdsTable;
     TableName : string;
     FileTmp   : string;
-    // уникальных индексов
+    // количество уникальных индексов
     IndCount  : Integer;
+    //
     IndexInf  : TList;
+    //
     FieldsInf    : TList;
     FieldsInfAds : TACEFieldDefs;
     // поля с типом autoincrement

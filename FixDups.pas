@@ -43,6 +43,7 @@ var
 implementation
 
 uses
+  DateUtils,
   FileUtil;
 
 function EmptyFCond(FieldName : String; FieldType : Integer; IsNOT : Boolean = False) : string;
@@ -396,19 +397,35 @@ end;
 
 
 // Чтение всех полей записи с обработкой ошибок
-function Read1RecEx(Rec: TFields) : Integer;
+function Read1RecEx(Rec: TFields; FInf : TList) : Integer;
 var
-
+  s : string;
+  Ms,
   j: Integer;
   v: Variant;
+  t:TDateTime;
+  ts :TTimeStamp;
+  Year : Word;
   LJ,
   LF : TList;
+  FI : TFieldsInf;
 begin
   Result := -1;
   LJ := TList.Create;
   for j := 0 to Rec.Count - 1 do begin
     try
     v := Rec[j].Value;
+    FI := TFieldsInf(FInf[j]);
+    if (FI.FieldType = ADS_TIMESTAMP) then begin
+      s := Rec[j].DisplayText;
+      t := Rec[j].Value;
+      ts := DateTimeToTimeStamp(t);
+      Year := YearOf(t);
+      Ms := ts.Time;
+      if (Year < 1) or (Year > 2100) or (Ms < 0) or (Ms > 86400000) then
+        raise Exception.Create('Неправильная дата!');
+    end;
+
     except
       Result := j;
       //v := j;
@@ -496,7 +513,7 @@ begin
       while (not TT.Eof) do begin
         i := i + 1;
         try
-          BadField := Read1RecEx(TT.Fields);
+          BadField := Read1RecEx(TT.Fields, SrcTblInf.FieldsInf);
           if (BadField >= 0) then begin
             BadFInRec := TFieldInRec.Create;
             //BadFInRec.RecNo     := TT.RecNo;
@@ -723,16 +740,16 @@ begin
     dtmdlADS.tblAds.Active := False;
   dtmdlADS.tblAds.TableName := AdsTbl.TableName;
 
-  //dtmdlADS.tblAds.Active := True;
-  //
-  //dtmdlADS.tblAds.Active := False;
+  // Auto-create empty table
+  dtmdlADS.tblAds.Active := True;
+  dtmdlADS.tblAds.Active := False;
 
 
   try
     if (ChangeAI2Int(AdsTbl) = True) then begin
-      ss := 'INSERT INTO ' + AdsTbl.TableName + ' SELECT * FROM "' + FileDst + '"';
+      ss := 'INSERT INTO ' + AdsTbl.TableName + ' SELECT * FROM "' + FileDst + '" SRC';
       if (Length(AdsTbl.DmgdRIDs) > 0) then
-        ss := ss + ' WHERE ROWID NOT IN (' + AdsTbl.DmgdRIDs + ')';
+        ss := ss + ' WHERE SRC.ROWID NOT IN (' + AdsTbl.DmgdRIDs + ')';
       dtmdlADS.conAdsBase.Execute(ss);
       ChangeInt2AI(AdsTbl);
 
