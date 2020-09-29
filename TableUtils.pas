@@ -45,6 +45,8 @@ type
     AdsT      : TAdsTable;
     TableName : string;
     FileTmp   : string;
+    // количество записей (теоретически)
+    RecCount  : Integer;
     // количество уникальных индексов
     IndCount  : Integer;
     //
@@ -54,12 +56,18 @@ type
     FieldsInfAds : TACEFieldDefs;
     // поля с типом autoincrement
     FieldsAI  : TStringList;
+
     ErrInfo  : TErrInfo;
 
     DupRows   : TList;
     List4Del  : String;
 
     DmgdRIDs  : string;
+    // количество записей (фактически)
+    LastGood  : Integer;
+    // список интервалов для INSERT
+    GoodSpans : TList;
+
     TotalDel  : Integer;
     RowsFixed : Integer;
     //property Owner : TObject read FOwner write FOwner;
@@ -90,8 +98,9 @@ begin
   Self.AdsT.TableName := TName;
   Self.FSysPfx := AnsiPfx;
 
-  IndexInf := TList.Create;
-  ErrInfo  := TErrInfo.Create;
+  IndexInf  := TList.Create;
+  ErrInfo   := TErrInfo.Create;
+  GoodSpans := TList.Create;
 end;
 
 

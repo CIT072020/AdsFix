@@ -17,10 +17,19 @@ const
   FWT_BIN  : Integer = 5;
 
 type
-  TFieldInRec = class
+  TBadRec = class
+  //info по сбойной записи
     RecNo : Integer;
     BadFieldI : Integer;
     RowID : string;
+    UseInSpan : Boolean;
+    InTOP     : Integer;
+    InSTART   : Integer;
+  end;
+  TSpan = class
+  //info по интервалу хороших записей
+    InTOP     : Integer;
+    InSTART   : Integer;
   end;
 
   TRowIDStruct = record
@@ -32,7 +41,7 @@ type
 
 
 procedure FixAllMarked(Sender: TObject);
-function ChangeOriginal(AdsTbl: TTableInf): Boolean;
+function ChangeOriginal(SrcTbl: TTableInf): Boolean;
 function DelOriginalTable(AdsTbl: TTableInf): Boolean;
 
 var
@@ -397,34 +406,38 @@ end;
 
 
 // Чтение всех полей записи с обработкой ошибок
-function Read1RecEx(Rec: TFields; FInf : TList) : Integer;
+function Read1RecEx(Rec: TFields; FInf: TList): Integer;
 var
-  s : string;
-  Ms,
-  j: Integer;
+  s: string;
+  Ms, j: Integer;
   v: Variant;
-  t:TDateTime;
-  ts :TTimeStamp;
-  Year : Word;
-  LJ,
-  LF : TList;
-  FI : TFieldsInf;
+  t: TDateTime;
+  ts: TTimeStamp;
+  Year: Word;
+  LJ, LF: TList;
+  FI: TFieldsInf;
 begin
   Result := -1;
   LJ := TList.Create;
   for j := 0 to Rec.Count - 1 do begin
     try
-    v := Rec[j].Value;
-    FI := TFieldsInf(FInf[j]);
-    if (FI.FieldType = ADS_TIMESTAMP) then begin
+      v := Rec[j].Value;
       s := Rec[j].DisplayText;
-      t := Rec[j].Value;
-      ts := DateTimeToTimeStamp(t);
-      Year := YearOf(t);
-      Ms := ts.Time;
-      if (Year < 1) or (Year > 2100) or (Ms < 0) or (Ms > 86400000) then
-        raise Exception.Create('Неправильная дата!');
-    end;
+      if (Length(s) > 0) then begin
+        FI := TFieldsInf(FInf[j]);
+        if (FI.FieldType in ADS_DATES) then begin
+          t := Rec[j].Value;
+          Year := YearOf(t);
+          if (Year <= 1) or (Year > 2100) then
+            raise Exception.Create('Неправильная дата!');
+          if (FI.FieldType = ADS_TIMESTAMP) then begin
+            Ms := (DateTimeToTimeStamp(t)).Time;
+      //Ms := ts.Time;
+            if (Ms < 0) or (Ms > 86400000) then
+              raise Exception.Create('Неправильное время!');
+          end
+        end;
+      end;
 
     except
       Result := j;
@@ -434,8 +447,11 @@ begin
   end;
 
   for j := 0 to LJ.Count - 1 do begin
-    end;
   end;
+end;
+
+
+
 
 // Список ROWIDs с поврежденными данными (из списка Recno)
 function ConvertRecNo2RowID(BRecs: TList; AdsTbl: TAdsTable): string;
@@ -443,7 +459,7 @@ var
   b, i: Integer;
   sID1st: string;
   Q: TAdsQuery;
-  BadFInRec: TFieldInRec;
+  BadFInRec: TBadRec;
 begin
   Result := '';
   if (BRecs.Count > 0) then begin
@@ -451,7 +467,7 @@ begin
     Q.AdsConnection := AdsTbl.AdsConnection;
     b := 0;
     for i := 0 to BRecs.Count - 1 do begin
-      BadFInRec := TFieldInRec(BRecs[i]);
+      BadFInRec := TBadRec(BRecs[i]);
 
       Q.Active := False;
       Q.SQL.Text := 'SELECT TOP 1 START AT ' + IntToStr(BadFInRec.Recno) + ' ROWID FROM ' + AdsTbl.TableName;
@@ -472,11 +488,44 @@ begin
 
 end;
 
+// Добавить еще интервал, если нужно
+procedure OneSpan(var iBeg, iEnd: Integer; TotRecs: Integer; GSpans: TList);
+var
+  Span: TSpan;
+begin
+  if (iEnd >= iBeg) then begin
+        // предыдущий интервал используем
+    Span := TSpan.Create;
+        // для конструкции TOP
+    Span.InTOP := iEnd - iBeg + 1;
+    Span.InSTART := iBeg;
+    GSpans.Add(Span);
+  end;
+  iEnd := TotRecs;
 
+end;
 
-
-
-
+// Список интервалов
+procedure BuildSpans(BRecs: TList; SrcTbl: TTableInf);
+var
+  i,
+  iBeg,
+  iEnd : Integer;
+  BadRec: TBadRec;
+begin
+  // предполагаемое начало интервала
+  iBeg := 1;
+  iEnd := SrcTbl.RecCount;
+    for i := 0 to BRecs.Count - 1 do begin
+      BadRec := TBadRec(BRecs[i]);
+      // предыдущая перед ошибочной
+      iEnd := BadRec.RecNo - 1;
+      OneSpan(iBeg, iEnd, SrcTbl.RecCount, SrcTbl.GoodSpans);
+      iBeg := BadRec.RecNo + 1;
+    end;
+    if (iBeg <= SrcTbl.LastGood) then
+      OneSpan(iBeg, iEnd, SrcTbl.RecCount, SrcTbl.GoodSpans);
+end;
 
 
 // Коррктировка таблицы с поврежденными данными
@@ -487,7 +536,7 @@ var
   j, i: Integer;
   sExec: string;
   TT: TAdsTable;
-  BadFInRec : TFieldInRec;
+  BadFInRec : TBadRec;
   BadRecs : TList;
 begin
   try
@@ -505,6 +554,7 @@ begin
     TT.AdsConnection := dtmdlADS.cnABTmp;
     TT.TableName := SrcTblInf.TableName;
     TT.Active := True;
+    SrcTblInf.RecCount := TT.RecordCount;
     if (TT.RecordCount > 0) then begin
       BadRecs := TList.Create;
       i := 0;
@@ -515,12 +565,16 @@ begin
         try
           BadField := Read1RecEx(TT.Fields, SrcTblInf.FieldsInf);
           if (BadField >= 0) then begin
-            BadFInRec := TFieldInRec.Create;
+            BadFInRec := TBadRec.Create;
             //BadFInRec.RecNo     := TT.RecNo;
             BadFInRec.RecNo     := i;
             BadFInRec.BadFieldI := BadField;
             BadRecs.Add(BadFInRec);
-          end;
+          end
+          else
+          SrcTblInf.LastGood := i;
+
+
         except
 
         end;
@@ -530,6 +584,7 @@ begin
     end;
     TT.Close;
     SrcTblInf.DmgdRIDs := ConvertRecNo2RowID(BadRecs, TT);
+    BuildSpans(BadRecs, SrcTblInf);
 
   finally
     sExec := '';
@@ -659,13 +714,6 @@ begin
 
 end;
 
-
-
-
-
-
-
-
 // AutoInc => Integer
 function ChangeAI2Int(AdsTbl: TTableInf): Boolean;
 var
@@ -707,16 +755,18 @@ begin
 end;
 
 
-
-function ChangeOriginal(AdsTbl: TTableInf): Boolean;
+// Вставка в обнуляемый оригинал исправленных записей
+function ChangeOriginal(SrcTbl: TTableInf): Boolean;
 var
   ec: Boolean;
+  i: Integer;
   FileSrc, FileDst, TmpName, ss, sd: string;
+  Span: TSpan;
 begin
   Result := False;
-  FileSrc := AppPars.Path2Src + AdsTbl.TableName;
-  FileDst := AppPars.Path2Tmp + AdsTbl.TableName + '.adt';
-  TmpName := AppPars.Path2Src + ORGPFX + AdsTbl.TableName;
+  FileSrc := AppPars.Path2Src + SrcTbl.TableName;
+  FileDst := AppPars.Path2Tmp + SrcTbl.TableName + '.adt';
+  TmpName := AppPars.Path2Src + ORGPFX + SrcTbl.TableName;
 
   if FileExists(FileSrc + '.adi') then
     ec := DeleteFiles(FileSrc + '.adi');
@@ -738,23 +788,36 @@ begin
 
   if (dtmdlADS.tblAds.Active) then
     dtmdlADS.tblAds.Active := False;
-  dtmdlADS.tblAds.TableName := AdsTbl.TableName;
+  dtmdlADS.tblAds.TableName := SrcTbl.TableName;
 
   // Auto-create empty table
   dtmdlADS.tblAds.Active := True;
   dtmdlADS.tblAds.Active := False;
 
-
   try
-    if (ChangeAI2Int(AdsTbl) = True) then begin
-      ss := 'INSERT INTO ' + AdsTbl.TableName + ' SELECT * FROM "' + FileDst + '" SRC';
-      if (Length(AdsTbl.DmgdRIDs) > 0) then
-        ss := ss + ' WHERE SRC.ROWID NOT IN (' + AdsTbl.DmgdRIDs + ')';
-      dtmdlADS.conAdsBase.Execute(ss);
-      ChangeInt2AI(AdsTbl);
+    if (ChangeAI2Int(SrcTbl) = True) then begin
+      if (SrcTbl.GoodSpans.Count <= 0) then begin
+        // Загрузка оптом
+        ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT * FROM "' + FileDst + '" SRC';
+        if (Length(SrcTbl.DmgdRIDs) > 0) then
+          ss := ss + ' WHERE SRC.ROWID NOT IN (' + SrcTbl.DmgdRIDs + ')';
+        dtmdlADS.conAdsBase.Execute(ss);
+      end
+      else begin
+        // Загрузка интервалами хороших записей
+        for i := 0 to SrcTbl.GoodSpans.Count - 1 do begin
+          Span := SrcTbl.GoodSpans[i];
 
+          ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) + ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
+          dtmdlADS.conAdsBase.Execute(ss);
+
+        end;
+
+      end;
+      ChangeInt2AI(SrcTbl);
       dtmdlADS.tblAds.Active := False;
       dtmdlADS.conAdsBase.Disconnect;
+
     end;
   except
   end;
