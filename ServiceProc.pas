@@ -131,4 +131,44 @@ end;
 
 
 
+
+
+// может, пригодится. А может и нет
+{
+// Список ROWIDs с поврежденными данными (из списка Recno)
+function ConvertRecNo2RowID(BRecs: TList; AdsTbl: TAdsTable): string;
+var
+  b, i: Integer;
+  sID1st: string;
+  Q: TAdsQuery;
+  BadFInRec: TBadRec;
+begin
+  Result := '';
+  if (BRecs.Count > 0) then begin
+    Q := TAdsQuery.Create(AdsTbl.Owner);
+    Q.AdsConnection := AdsTbl.AdsConnection;
+    b := 0;
+    for i := 0 to BRecs.Count - 1 do begin
+      BadFInRec := TBadRec(BRecs[i]);
+
+      Q.Active := False;
+      Q.SQL.Text := 'SELECT TOP 1 START AT ' + IntToStr(BadFInRec.Recno) + ' ROWID FROM ' + AdsTbl.TableName;
+      Q.Active := True;
+      if (Q.RecordCount > 0) then begin
+        sID1st := Q.FieldValues['ROWID'];
+        if (Length(sID1st) > 0) then begin
+          b := b + 1;
+          BadFInRec.RowID := sID1st;
+          if (b > 1) then
+            Result := Result + ',';
+          Result := Result + '''' + sID1st + '''';
+        end;
+
+      end;
+    end;
+  end;
+
+end;
+}
+
 end.

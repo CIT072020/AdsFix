@@ -55,6 +55,16 @@ uses
   DateUtils,
   FileUtil;
 
+function CopyOneFile(const Src, Dst: string): Integer;
+begin
+  Result := 0;
+  try
+    CopyFileEx(Src, Dst, True, True, nil);
+  except
+    Result := 1;
+  end;
+end;
+  
 function EmptyFCond(FieldName : String; FieldType : Integer; IsNOT : Boolean = False) : string;
 var
   bInBrck : Boolean;
@@ -108,10 +118,6 @@ begin
     ' ON ' + IndInf.EquSet;
   Result := Result + ' ORDER BY ' + AL_DKEY;
 end;
-
-
-
-
 
 
 function DelDups4Idx(AdsTbl : TTableInf) : Integer;
@@ -270,27 +276,6 @@ end;
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // оставить не больше одной записи из группы
 procedure DelOtherDups(AdsTbl : TTableInf);
 begin
@@ -356,7 +341,6 @@ begin
       AdsConnection := dtmdlADS.cnABTmp;
 
       TblInf.DupRows := TList.Create;
-      //AppPars.FixDupsMode := FXDP_DEL_ALL;
 
       for i := 0 to TblInf.IndCount - 1 do begin
           // для всех уникальных индексов таблицы
@@ -414,16 +398,15 @@ var
   t: TDateTime;
   ts: TTimeStamp;
   Year: Word;
-  LJ, LF: TList;
   FI: TFieldsInf;
 begin
   Result := -1;
-  LJ := TList.Create;
   for j := 0 to Rec.Count - 1 do begin
     try
       v := Rec[j].Value;
       s := Rec[j].DisplayText;
       if (Length(s) > 0) then begin
+      // Не пусто или не NULL
         FI := TFieldsInf(FInf[j]);
         if (FI.FieldType in ADS_DATES) then begin
           t := Rec[j].Value;
@@ -441,69 +424,29 @@ begin
 
     except
       Result := j;
-      //v := j;
-      //LJ.Add(v);
-    end;
-  end;
-
-  for j := 0 to LJ.Count - 1 do begin
-  end;
-end;
-
-
-
-
-// Список ROWIDs с поврежденными данными (из списка Recno)
-function ConvertRecNo2RowID(BRecs: TList; AdsTbl: TAdsTable): string;
-var
-  b, i: Integer;
-  sID1st: string;
-  Q: TAdsQuery;
-  BadFInRec: TBadRec;
-begin
-  Result := '';
-  if (BRecs.Count > 0) then begin
-    Q := TAdsQuery.Create(AdsTbl.Owner);
-    Q.AdsConnection := AdsTbl.AdsConnection;
-    b := 0;
-    for i := 0 to BRecs.Count - 1 do begin
-      BadFInRec := TBadRec(BRecs[i]);
-
-      Q.Active := False;
-      Q.SQL.Text := 'SELECT TOP 1 START AT ' + IntToStr(BadFInRec.Recno) + ' ROWID FROM ' + AdsTbl.TableName;
-      Q.Active := True;
-      if (Q.RecordCount > 0) then begin
-        sID1st := Q.FieldValues['ROWID'];
-        if (Length(sID1st) > 0) then begin
-          b := b + 1;
-          BadFInRec.RowID := sID1st;
-          if (b > 1) then
-            Result := Result + ',';
-          Result := Result + '''' + sID1st + '''';
-        end;
-
-      end;
     end;
   end;
 
 end;
 
-// Добавить еще интервал, если нужно
+
+
+// Добавить еще интервал хороших записей, если нужно
 procedure OneSpan(var iBeg, iEnd: Integer; TotRecs: Integer; GSpans: TList);
 var
   Span: TSpan;
 begin
   if (iEnd >= iBeg) then begin
-        // предыдущий интервал используем
+    // предыдущий интервал используем
     Span := TSpan.Create;
-        // для конструкции TOP
-    Span.InTOP := iEnd - iBeg + 1;
+    // для конструкции TOP
+    Span.InTOP   := iEnd - iBeg + 1;
     Span.InSTART := iBeg;
     GSpans.Add(Span);
   end;
   iEnd := TotRecs;
-
 end;
+
 
 // Список интервалов
 procedure BuildSpans(BRecs: TList; SrcTbl: TTableInf);
@@ -528,8 +471,8 @@ begin
 end;
 
 
-// Коррктировка таблицы с поврежденными данными
-function Fix8901(SrcTblInf: TTableInf; DstPath: string): Integer;
+// Коррктировка таблицы с поврежденными данными (Scan by Skip)
+function Fix8901Skip(SrcTblInf: TTableInf; DstPath: string): Integer;
 var
   BadField,
   Step,
@@ -583,7 +526,7 @@ begin
       end;
     end;
     TT.Close;
-    SrcTblInf.DmgdRIDs := ConvertRecNo2RowID(BadRecs, TT);
+    //SrcTblInf.DmgdRIDs := ConvertRecNo2RowID(BadRecs, TT);
     BuildSpans(BadRecs, SrcTblInf);
 
   finally
@@ -592,41 +535,87 @@ begin
 end;
 
 
-function CopyOneFile(const Src, Dst: string): Integer;
+// Коррктировка таблицы с поврежденными данными (Scan by SQL-Select)
+function Fix8901(SrcTblInf: TTableInf; DstPath: string): Integer;
+var
+  BadField,
+  Step,
+  j, i: Integer;
+  sExec: string;
+  TT: TAdsTable;
+  Q: TAdsQuery;
+  BadFInRec : TBadRec;
+  BadRecs : TList;
 begin
-Result := 0;
-try
-  CopyFileEx(Src, Dst, True, True, nil);
-except
-  Result := 1;
+  try
+    Result := 0;
+    if (dtmdlADS.cnABTmp.IsConnected) then
+      dtmdlADS.cnABTmp.IsConnected := False;
+
+    dtmdlADS.cnABTmp.ConnectPath := AppPars.Path2Tmp;
+    dtmdlADS.cnABTmp.IsConnected := True;
+
+    TT := dtmdlADS.tblTmp;
+    if (TT.Active = True) then
+      TT.Close;
+    TT.AdsConnection := dtmdlADS.cnABTmp;
+    TT.TableName := SrcTblInf.TableName;
+    TT.Active := True;
+    SrcTblInf.RecCount := TT.RecordCount;
+    TT.Close;
+
+    Q := TAdsQuery.Create(dtmdlADS.cnABTmp.Owner);
+    Q.AdsConnection := dtmdlADS.cnABTmp;
+
+    BadRecs := TList.Create;
+    for i := 1 to SrcTblInf.RecCount do begin
+
+      Q.Active := False;
+      Q.SQL.Text := 'SELECT TOP 1 START AT ' + IntToStr(i) + ' * FROM ' + SrcTblInf.TableName;
+      Q.Active := True;
+      if (i > 10000) then
+        j := 88;
+      if (Q.RecordCount > 0) then begin
+
+        try
+          BadField := Read1RecEx(Q.Fields, SrcTblInf.FieldsInf);
+          if (BadField >= 0) then begin
+            BadFInRec := TBadRec.Create;
+            BadFInRec.RecNo     := i;
+            BadFInRec.BadFieldI := BadField;
+            BadRecs.Add(BadFInRec);
+          end
+          else
+          SrcTblInf.LastGood := i;
+
+        except
+
+        end;
+
+      end;
+    end;
+
+    BuildSpans(BadRecs, SrcTblInf);
+
+  finally
+    sExec := '';
+  end;
 end;
-end;
-
-
-
-
-
-
-
-
-
-
-
 
 
 // вызов метода для кода ошибки
-function TblErrorController(AdsTbl: TTableInf): Integer;
+function TblErrorController(SrcTbl: TTableInf): Integer;
 begin
 
-  case AdsTbl.ErrInfo.ErrClass of
+  case SrcTbl.ErrInfo.ErrClass of
     7008,
     7200, 7207:
       begin
-        AdsTbl.RowsFixed := Fix7207(AdsTbl, AdsTbl.FileTmp);
+        SrcTbl.RowsFixed := Fix7207(SrcTbl, SrcTbl.FileTmp);
       end;
     UE_BAD_DATA:
       begin
-        AdsTbl.RowsFixed := Fix8901(AdsTbl, AdsTbl.FileTmp);
+        SrcTbl.RowsFixed := Fix8901(SrcTbl, SrcTbl.FileTmp);
       end;
   end;
 
@@ -641,7 +630,7 @@ end;
 
 
 
-function PrepTable(AdsTbl: TTableInf): Integer;
+function PrepTable(SrcTbl: TTableInf): Integer;
 var
   ec: Integer;
   FileSrc, FileDst, s: string;
@@ -650,12 +639,12 @@ begin
   Result := 0;
   try
 
-    //TTableInf.FieldsInfBySQL(AdsTbl, dtmdlADS.qAny);
-    AdsTbl.FieldsInfo;
-    AdsTbl.IndexesInf(AdsTbl, dtmdlADS.qAny);
+    //TTableInf.FieldsInfBySQL(SrcTbl, dtmdlADS.qAny);
+    SrcTbl.FieldsInfo;
+    SrcTbl.IndexesInf(SrcTbl, dtmdlADS.qAny);
 
-    FileSrc := AppPars.Path2Src + AdsTbl.TableName;
-    AdsTbl.FileTmp := AppPars.Path2Tmp + AdsTbl.TableName + '.adt';
+    FileSrc := AppPars.Path2Src + SrcTbl.TableName;
+    SrcTbl.FileTmp := AppPars.Path2Tmp + SrcTbl.TableName + '.adt';
 
     if (CopyOneFile(FileSrc + '.adt', AppPars.Path2Tmp) = 0) then begin
 
@@ -663,7 +652,7 @@ begin
         if (CopyOneFile(FileSrc + '.adm', AppPars.Path2Tmp) = 0) then begin
         end;
       end;
-      if AdsDDFreeTable(PAnsiChar(AdsTbl.FileTmp), nil) = AE_FREETABLEFAILED then begin
+      if AdsDDFreeTable(PAnsiChar(SrcTbl.FileTmp), nil) = AE_FREETABLEFAILED then begin
         Result := 1;
         ErrInf.Text := 'Error while free Table from datadictionary';
       end;
