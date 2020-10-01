@@ -124,7 +124,6 @@ type
   end;
 
 function SetSysAlias(QV : TAdsQuery) : string;
-procedure Read1Rec(Rec: TFields);
 procedure PrepareList(Path2Dic: string);
 
 var
@@ -168,17 +167,6 @@ begin
   dtmdlADS.conAdsBase.Password    := Password;
   dtmdlADS.conAdsBase.ConnectPath := Path2Dic;
   dtmdlADS.conAdsBase.IsConnected := True;
-end;
-
-// Чтение всех полей записи
-procedure Read1Rec(Rec: TFields);
-var
-  j: Integer;
-  v: Variant;
-begin
-  for j := 0 to Rec.Count - 1 do begin
-    v := Rec[j].Value;
-  end;
 end;
 
 

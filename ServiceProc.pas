@@ -27,8 +27,18 @@ const
   AL_DUPCNTF : string = ',D.DUPCNT,';
 
   // коды ошибок
+  // мусор в данных
   UE_BAD_DATA = 8901;
 
+  // копия не получилась
+  UE_BAD_PREP = 9001;
+
+const
+  EMSG_BAD_DATA : string = 'Некорректные данные!';
+
+const
+  MAX_READ_MEDIUM : Integer = 5000;
+  
 type
   // Режимы тестирования
   TestMode = (Simple, Medium, Slow);

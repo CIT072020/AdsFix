@@ -3,7 +3,8 @@ unit TableUtils;
 interface
 
 uses
-  Classes,
+  SysUtils,
+  Classes, DB,
   AdsData, Ace, AdsTable, AdsCnnct,
   ServiceProc, AdsDAO;
 
@@ -77,16 +78,20 @@ type
     //class procedure FieldsInfBySQL(AdsTbl: TTableInf; QWork : TAdsQuery);
     procedure FieldsInfo;
 
-    procedure IndexesInf(AdsTbl: TTableInf; QWork : TAdsQuery);
+    procedure IndexesInf(SrcTbl: TTableInf; QWork : TAdsQuery);
     function Test1Table(AdsTI : TTableInf; QWork : TAdsQuery; Check: TestMode): Integer;
   end;
+
+procedure Read1Rec(Rec: TFields);
+function Read1RecEx(Rec: TFields; FInf: TList): Integer;
 
 implementation
 
 uses
   FileUtil,
   StrUtils,
-  DB,
+  DateUtils,
+  Math,
   DBFunc;
 
 constructor TTableInf.Create(TName : string; AT: TAdsTable; AnsiPfx : string);
@@ -223,7 +228,7 @@ begin
 end;
 
 // сведени€ об индексах одной таблицы (SQL)
-procedure TTableInf.IndexesInf(AdsTbl: TTableInf; QWork : TAdsQuery);
+procedure TTableInf.IndexesInf(SrcTbl: TTableInf; QWork : TAdsQuery);
 var
   i, j: Integer;
   CommaList: string;
@@ -231,16 +236,16 @@ var
 label
   QFor;
 begin
-  AdsTbl.IndexInf := TList.Create;
+  SrcTbl.IndexInf := TList.Create;
   with QWork do begin
     if Active then
       Close;
     // все уникальные индексы
     SQL.Text := 'SELECT INDEX_OPTIONS, INDEX_EXPRESSION, PARENT FROM ' +
-      FSysPfx + 'INDEXES WHERE (PARENT = ''' + AdsTbl.TableName +
+      FSysPfx + 'INDEXES WHERE (PARENT = ''' + SrcTbl.TableName +
       ''') AND ((INDEX_OPTIONS & 1) = 1)';
     Active := True;
-    AdsTbl.IndCount := RecordCount;
+    SrcTbl.IndCount := RecordCount;
     First;
     while not Eof do begin
       UInd := TIndexInf.Create;
@@ -266,8 +271,8 @@ begin
         CommaList := CommaList + Uind.Fields[j];
         UInd.AlsCommaSet := UInd.AlsCommaSet + AL_SRC + '.' + Uind.Fields[j];
         UInd.EquSet := UInd.EquSet + '(' + AL_SRC + '.' + Uind.Fields[j] + '=' + AL_DUP + '.' + Uind.Fields[j] + ')';
-        for i := 0 to AdsTbl.FieldsInfAds.Count - 1 do
-          if (AdsTbl.FieldsInfAds[i].FieldName = UInd.Fields[j]) then begin
+        for i := 0 to SrcTbl.FieldsInfAds.Count - 1 do
+          if (SrcTbl.FieldsInfAds[i].FieldName = UInd.Fields[j]) then begin
             UInd.IndFieldsAdr[j] := i;
             goto QFor;
           end;
@@ -275,7 +280,7 @@ begin
 QFor:
       UInd.CommaSet := CommaList;
 
-      AdsTbl.IndexInf.Add(UInd);
+      SrcTbl.IndexInf.Add(UInd);
       Next;
     end;
 
@@ -298,7 +303,9 @@ begin
     for j := 0 to IndInf.Fields.Count - 1 do begin
       k := IndInf.IndFieldsAdr[j];
       t := AdsTI.FieldsInfAds[k].FieldType;
-      if (t in [ADS_INTEGER, ADS_SHORTINT, ADS_AUTOINC]) then begin
+      if (t in [ADS_LOGICAL, ADS_INTEGER, ADS_SHORTINT, ADS_AUTOINC])
+        or (t in ADS_DATES)
+        or (t in ADS_BIN) then begin
         Result := k;
         Exit;
       end;
@@ -307,45 +314,107 @@ begin
 
 end;
 
+// „тение всех полей записи
+procedure Read1Rec(Rec: TFields);
+var
+  j: Integer;
+  v: Variant;
+begin
+  for j := 0 to Rec.Count - 1 do begin
+    v := Rec[j].Value;
+  end;
+end;
+
+// „тение всех полей записи с обработкой ошибок
+function Read1RecEx(Rec: TFields; FInf: TList): Integer;
+var
+  Ms, j: Integer;
+  v: Variant;
+  t: TDateTime;
+  ts: TTimeStamp;
+  Year: Word;
+  FI: TFieldsInf;
+begin
+  Result := -1;
+  for j := 0 to Rec.Count - 1 do begin
+    try
+      v := Rec[j].Value;
+      if (Length(Rec[j].DisplayText) > 0) then begin
+      // Ќе пусто или не NULL
+        FI := TFieldsInf(FInf[j]);
+        if (FI.FieldType in ADS_DATES) then begin
+          //t := Rec[j].Value;
+          t := v;
+          Year := YearOf(t);
+          if (Year <= 1) or (Year > 2100) then
+            raise Exception.Create(EMSG_BAD_DATA);
+          if (FI.FieldType = ADS_TIMESTAMP) then begin
+            Ms := (DateTimeToTimeStamp(t)).Time;
+            if (Ms < 0) or (Ms > MSEC_PER_DAY) then
+              raise Exception.Create(EMSG_BAD_DATA);
+          end
+        end;
+      end;
+
+    except
+      Result := j;
+      Break;
+    end;
+  end;
+
+end;
 
 // ѕопытка позиционировани€ и чтени€ выборки записей таблицы
-procedure PositionSomeRecs(AdsTbl: TAdsTable; Check: TestMode);
+procedure PositionSomeRecs(AdsTbl: TAdsTable; FInf: TList; Check: TestMode);
 var
   Step: Integer;
 begin
   if (AdsTbl.RecordCount > 0) then begin
-    try
-      AdsTbl.First;
-      Read1Rec(AdsTbl.Fields);
-      AdsTbl.Last;
-      Read1Rec(AdsTbl.Fields);
+    AdsTbl.First;
+    if (Read1RecEx(AdsTbl.Fields, FInf) >= 0) then
+      raise EADSDatabaseError.create(AdsTbl, UE_BAD_DATA, EMSG_BAD_DATA);
+    AdsTbl.Last;
+    if (Read1RecEx(AdsTbl.Fields, FInf) >= 0) then
+      raise EADSDatabaseError.create(AdsTbl, UE_BAD_DATA, EMSG_BAD_DATA);
 
-      if (Check = Simple) then begin
+    if (Check = Simple) then
         // Make EoF
-        AdsTbl.Next;
+      AdsTbl.Next
+    else begin
+      if (Check = Medium) then begin
+        Step := Max(AdsTbl.RecordCount div 10, 1);
+        if (Step > MAX_READ_MEDIUM) then
+          // 10 процент записей превышает MAX_READ_MEDIUM
+          Step := AdsTbl.RecordCount div MAX_READ_MEDIUM;
       end
-      else begin
-        if (Check = Medium) then
-          Step := 500
-        else
-          Step := 1;
-        AdsTbl.First;
-      end;
-      while (not AdsTbl.Eof) do begin
-        AdsTbl.AdsSkip(Step);
-        Read1Rec(AdsTbl.Fields);
-      end;
+      else
+        Step := 1;
+      AdsTbl.First;
+    end;
 
-    except
-    //BAD DATA
-      AdsTbl.Close;
-      raise EADSDatabaseError.create( AdsTbl, UE_BAD_DATA, 'Ќекорректные данные' );
-
+    while (not AdsTbl.Eof) do begin
+      AdsTbl.AdsSkip(Step);
+      if (Read1RecEx(AdsTbl.Fields, FInf) >= 0) then
+        raise EADSDatabaseError.create(AdsTbl, UE_BAD_DATA, EMSG_BAD_DATA);
     end;
 
   end;
 end;
 
+
+//  оличество записей в таблице (SQL)
+function RecsBySQL(Q: TAdsQuery; TName: string): Integer;
+begin
+  Result := 0;
+  Q.Close;
+  Q.SQL.Clear;
+  Q.SQL.Text := 'SELECT COUNT(*) FROM ' + TName;
+  Q.Active := True;
+  if (Q.RecordCount > 0) then
+    Result := Q.Fields[0].Value;
+  Q.Close;
+  Q.AdsCloseSQLStatement;
+end;
 
 // тестирование одной таблицы на ошибки
 function TTableInf.Test1Table(AdsTI : TTableInf; QWork : TAdsQuery; Check: TestMode): Integer;
@@ -361,20 +430,23 @@ begin
     AdsTI.AdsT.Close;
 
   try
-    //FieldsInfBySQL(AdsTI, QWork);
     Conn := QWork.AdsConnection;
     FieldsInfo;
     IndexesInf(AdsTI, QWork);
+    AdsTI.RecCount := RecsBySQL(QWork, AdsTI.TableName);
 
     // Easy Mode and others
     AdsTI.AdsT.Open;
-    PositionSomeRecs(AdsTI.AdsT, Check);
+    PositionSomeRecs(AdsTI.AdsT, AdsTI.FieldsInf, Check);
     AdsTI.AdsT.Close;
 
     if (Check = Medium)
       OR (Check = Slow) then begin
-      //s := 'EXECUTE PROCEDURE sp_Reindex(' + AdsTI.TableName + ')';
-      //Conn.Execute(s);
+      s := 'EXECUTE PROCEDURE sp_Reindex(''' + AdsTI.TableName + '.adt'',0)';
+      Conn.Execute(s);
+
+      if (Check = Slow) then begin
+
           if (AdsTI.IndCount > 0) then begin
         // есть уникальные индексы
             iFld := Field4Alter(AdsTI);
@@ -388,9 +460,8 @@ begin
             end;
           end;
 
-      if (Check = Slow) then begin
+        // Realy need?
         AdsTI.AdsT.PackTable;
-
       end;
 
     end;

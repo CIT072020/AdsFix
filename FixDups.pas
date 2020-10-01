@@ -4,7 +4,8 @@ interface
 
 uses
   SysUtils, Classes, adsset, adscnnct, DB, adsdata, adsfunc, adstable, ace,
-  kbmMemTable, EncdDecd,
+  kbmMemTable,
+  //EncdDecd,
   ServiceProc, AdsDAO, TableUtils;
 
 const
@@ -52,7 +53,6 @@ var
 implementation
 
 uses
-  DateUtils,
   FileUtil;
 
 function CopyOneFile(const Src, Dst: string): Integer;
@@ -389,46 +389,6 @@ end;
 
 
 
-// Чтение всех полей записи с обработкой ошибок
-function Read1RecEx(Rec: TFields; FInf: TList): Integer;
-var
-  s: string;
-  Ms, j: Integer;
-  v: Variant;
-  t: TDateTime;
-  ts: TTimeStamp;
-  Year: Word;
-  FI: TFieldsInf;
-begin
-  Result := -1;
-  for j := 0 to Rec.Count - 1 do begin
-    try
-      v := Rec[j].Value;
-      s := Rec[j].DisplayText;
-      if (Length(s) > 0) then begin
-      // Не пусто или не NULL
-        FI := TFieldsInf(FInf[j]);
-        if (FI.FieldType in ADS_DATES) then begin
-          t := Rec[j].Value;
-          Year := YearOf(t);
-          if (Year <= 1) or (Year > 2100) then
-            raise Exception.Create('Неправильная дата!');
-          if (FI.FieldType = ADS_TIMESTAMP) then begin
-            Ms := (DateTimeToTimeStamp(t)).Time;
-      //Ms := ts.Time;
-            if (Ms < 0) or (Ms > 86400000) then
-              raise Exception.Create('Неправильное время!');
-          end
-        end;
-      end;
-
-    except
-      Result := j;
-    end;
-  end;
-
-end;
-
 
 
 // Добавить еще интервал хороших записей, если нужно
@@ -472,7 +432,7 @@ end;
 
 
 // Коррктировка таблицы с поврежденными данными (Scan by Skip)
-function Fix8901Skip(SrcTblInf: TTableInf; DstPath: string): Integer;
+function Fix8901(SrcTblInf: TTableInf; DstPath: string): Integer;
 var
   BadField,
   Step,
@@ -497,7 +457,9 @@ begin
     TT.AdsConnection := dtmdlADS.cnABTmp;
     TT.TableName := SrcTblInf.TableName;
     TT.Active := True;
-    SrcTblInf.RecCount := TT.RecordCount;
+
+    //SrcTblInf.RecCount := TT.RecordCount;
+
     if (TT.RecordCount > 0) then begin
       BadRecs := TList.Create;
       i := 0;
@@ -536,16 +498,14 @@ end;
 
 
 // Коррктировка таблицы с поврежденными данными (Scan by SQL-Select)
-function Fix8901(SrcTblInf: TTableInf; DstPath: string): Integer;
+function Fix8901SQLScan(SrcTblInf: TTableInf; DstPath: string): Integer;
 var
-  BadField,
-  Step,
-  j, i: Integer;
+  BadField, Step, j, i: Integer;
   sExec: string;
   TT: TAdsTable;
   Q: TAdsQuery;
-  BadFInRec : TBadRec;
-  BadRecs : TList;
+  BadFInRec: TBadRec;
+  BadRecs: TList;
 begin
   try
     Result := 0;
@@ -554,7 +514,7 @@ begin
 
     dtmdlADS.cnABTmp.ConnectPath := AppPars.Path2Tmp;
     dtmdlADS.cnABTmp.IsConnected := True;
-
+{
     TT := dtmdlADS.tblTmp;
     if (TT.Active = True) then
       TT.Close;
@@ -563,6 +523,7 @@ begin
     TT.Active := True;
     SrcTblInf.RecCount := TT.RecordCount;
     TT.Close;
+}
 
     Q := TAdsQuery.Create(dtmdlADS.cnABTmp.Owner);
     Q.AdsConnection := dtmdlADS.cnABTmp;
@@ -573,26 +534,25 @@ begin
       Q.Active := False;
       Q.SQL.Text := 'SELECT TOP 1 START AT ' + IntToStr(i) + ' * FROM ' + SrcTblInf.TableName;
       Q.Active := True;
-      if (i > 10000) then
-        j := 88;
       if (Q.RecordCount > 0) then begin
 
         try
           BadField := Read1RecEx(Q.Fields, SrcTblInf.FieldsInf);
           if (BadField >= 0) then begin
             BadFInRec := TBadRec.Create;
-            BadFInRec.RecNo     := i;
+            BadFInRec.RecNo := i;
             BadFInRec.BadFieldI := BadField;
             BadRecs.Add(BadFInRec);
           end
           else
-          SrcTblInf.LastGood := i;
+            SrcTblInf.LastGood := i;
 
         except
 
         end;
 
       end;
+      Q.AdsCloseSQLStatement;
     end;
 
     BuildSpans(BadRecs, SrcTblInf);
@@ -601,6 +561,8 @@ begin
     sExec := '';
   end;
 end;
+
+
 
 
 // вызов метода для кода ошибки
@@ -640,8 +602,8 @@ begin
   try
 
     //TTableInf.FieldsInfBySQL(SrcTbl, dtmdlADS.qAny);
-    SrcTbl.FieldsInfo;
-    SrcTbl.IndexesInf(SrcTbl, dtmdlADS.qAny);
+    //SrcTbl.FieldsInfo;
+    //SrcTbl.IndexesInf(SrcTbl, dtmdlADS.qAny);
 
     FileSrc := AppPars.Path2Src + SrcTbl.TableName;
     SrcTbl.FileTmp := AppPars.Path2Tmp + SrcTbl.TableName + '.adt';
@@ -668,33 +630,45 @@ begin
 
 end;
 
+// Исправить все отмеченные
 procedure FixAllMarked(Sender: TObject);
 var
   ec, i: Integer;
+
+  //PSrcTbl: ^TTableInf;
+  SrcTbl: TTableInf;
 begin
+  if (dtmdlADS.tblAds.Active) then
+    dtmdlADS.tblAds.Close;
   with dtmdlADS.mtSrc do begin
     First;
     i := 0;
     while not Eof do begin
       i := i + 1;
       if (dtmdlADS.FSrcMark.AsBoolean = True) then begin
-        if (dtmdlADS.tblAds.Active) then
-          dtmdlADS.tblAds.Close;
 
-        TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds, dtmdlADS.SYSTEM_ALIAS);
-        //TableInf.AdsT := dtmdlADS.tblAds;
-        //TableInf.Owner := dtmdlADS.tblAds.Owner;
-        //TableInf.AdsT.TableName := dtmdlADS.FSrcTName.AsString;
-        TableInf.ErrInfo.ErrClass  := dtmdlADS.FSrcTestCode.AsInteger;
-        TableInf.ErrInfo.NativeErr := dtmdlADS.FSrcErrNative.AsInteger;
+        //SrcTbl := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds, dtmdlADS.SYSTEM_ALIAS);
+        //PSrcTbl := Pointer(dtmdlADS.FSrcFixInf.AsInteger);
+        //SrcTbl := TTableInf(dtmdlADS.FSrcFixInf);
+        SrcTbl := TTableInf(Ptr(dtmdlADS.FSrcFixInf.AsInteger));
+
+        //SrcTbl.AdsT := dtmdlADS.tblAds;
+        //SrcTbl.Owner := dtmdlADS.tblAds.Owner;
+        //SrcTbl.AdsT.TableName := dtmdlADS.FSrcTName.AsString;
+
+        //SrcTbl.ErrInfo.ErrClass := dtmdlADS.FSrcTestCode.AsInteger;
+        //SrcTbl.ErrInfo.NativeErr := dtmdlADS.FSrcErrNative.AsInteger;
 
         dtmdlADS.mtSrc.Edit;
-        ec := PrepTable(TableInf);
+        ec := PrepTable(SrcTbl);
         if (ec = 0) then
-          dtmdlADS.FSrcFixCode.AsInteger := TblErrorController(TableInf);
-        TInfLast := TableInf;
+          dtmdlADS.FSrcFixCode.AsInteger := TblErrorController(SrcTbl)
+        else
+          dtmdlADS.FSrcFixCode.AsInteger := UE_BAD_PREP;
+        TInfLast := SrcTbl;
         dtmdlADS.FSrcMark.AsBoolean := False;
         dtmdlADS.mtSrc.Post;
+        
       end;
       Next;
     end;
@@ -702,6 +676,7 @@ begin
   end;
 
 end;
+
 
 // AutoInc => Integer
 function ChangeAI2Int(AdsTbl: TTableInf): Boolean;

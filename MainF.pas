@@ -41,6 +41,7 @@ type
     rgTestMode: TRadioGroup;
     btnTest: TButton;
     rgDelDupMode: TRadioGroup;
+    btnFullFixOne: TButton;
     procedure ChangePath2TmpClick(Sender: TObject; var Handled: Boolean);
     procedure btnTblListClick(Sender: TObject);
     procedure btnDelOrigClick(Sender: TObject);
@@ -232,19 +233,18 @@ end;
 
 
 
-
+// Тестирование всех или только отмеченных
 procedure TestSelected(ModeAll : Boolean);
 var
   ec, i: Integer;
 begin
   if (AppPars.IsDict = True) then begin
-    dtmdlADS.mtSrc.DisableControls;
-    with dtmdlADS.mtSrc do begin
 
-    //Close;
-    //Active := True;
-      dtmdlADS.tblAds.AdsConnection := dtmdlADS.conAdsBase;
-      //dtmdlADS.tblAds.ReadOnly := True;
+    // when progress bar be ready - actually
+    //dtmdlADS.mtSrc.DisableControls;
+
+    dtmdlADS.tblAds.AdsConnection := dtmdlADS.conAdsBase;
+    with dtmdlADS.mtSrc do begin
 
       First;
       i := 0;
@@ -253,7 +253,6 @@ begin
         if ((dtmdlADS.FSrcState.AsInteger = TST_UNKNOWN) AND (ModeAll = True))
           OR ((dtmdlADS.FSrcMark.AsBoolean = True) AND (ModeAll = False)) then begin
 
-        TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds, dtmdlADS.SYSTEM_ALIAS);
         //TableInf.TableName := dtmdlADS.FSrcTName.AsString;
         //TableInf.AdsT := ;
         //TableInf.Owner := dtmdlADS.tblAds.Owner;
@@ -261,8 +260,11 @@ begin
         //TableInf.AdsT.TableName := dtmdlADS.FSrcTName.AsString;
 
           dtmdlADS.mtSrc.Edit;
+
+          TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds, dtmdlADS.SYSTEM_ALIAS);
+          dtmdlADS.FSrcFixInf.AsInteger := Integer(TableInf);
+
           ec := TableInf.Test1Table(TableInf, dtmdlADS.qAny, AppPars.TMode);
-          dtmdlADS.FSrcFixInf.AsVariant := Integer(TableInf);
           dtmdlADS.FSrcAIncs.AsInteger := TableInf.FieldsAI.Count;
           dtmdlADS.FSrcTestCode.AsInteger := ec;
           if (ec > 0) then begin
