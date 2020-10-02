@@ -45,6 +45,8 @@ procedure FixAllMarked(Sender: TObject);
 function ChangeOriginal(SrcTbl: TTableInf): Boolean;
 function DelOriginalTable(AdsTbl: TTableInf): Boolean;
 
+procedure FullFixAllMarked(FixAll : Boolean = True);
+
 var
   TInfLast,
   TableInf : TTableInf;
@@ -139,8 +141,6 @@ end;
 
 // вес одного заполненного поля
 function FieldWeight(QF: TAdsQuery; FieldName: string; FieldType: integer): integer;
-var
-  RowWeight, i: integer;
 begin
     // BIN data (default)
   Result := FWT_BIN;
@@ -601,10 +601,6 @@ begin
   Result := 0;
   try
 
-    //TTableInf.FieldsInfBySQL(SrcTbl, dtmdlADS.qAny);
-    //SrcTbl.FieldsInfo;
-    //SrcTbl.IndexesInf(SrcTbl, dtmdlADS.qAny);
-
     FileSrc := AppPars.Path2Src + SrcTbl.TableName;
     SrcTbl.FileTmp := AppPars.Path2Tmp + SrcTbl.TableName + '.adt';
 
@@ -619,11 +615,11 @@ begin
         ErrInf.Text := 'Error while free Table from datadictionary';
       end;
     end;
+
   except
 
     on E: EADSDatabaseError do begin
-      Result := 1;
-      dtmdlADS.FSrcFixCode.AsInteger := E.ACEErrorCode;
+      Result := E.ACEErrorCode;
     end;
 
   end;
@@ -668,7 +664,7 @@ begin
         TInfLast := SrcTbl;
         dtmdlADS.FSrcMark.AsBoolean := False;
         dtmdlADS.mtSrc.Post;
-        
+
       end;
       Next;
     end;
@@ -679,38 +675,39 @@ end;
 
 
 // AutoInc => Integer
-function ChangeAI2Int(AdsTbl: TTableInf): Boolean;
+function ChangeAI2Int(SrcTbl: TTableInf): Boolean;
 var
   i: Integer;
   s: string;
 begin
   Result := True;
   try
-    if (AdsTbl.FieldsAI.Count > 0) then begin
-      s := 'ALTER TABLE ' + AdsTbl.TableName;
-      for i := 0 to (AdsTbl.FieldsAI.Count - 1) do begin
-        s := s + ' ALTER COLUMN ' + AdsTbl.FieldsAI[i] + ' ' + AdsTbl.FieldsAI[i] + ' INTEGER';
+    if (SrcTbl.FieldsAI.Count > 0) then begin
+      s := 'ALTER TABLE ' + SrcTbl.TableName;
+      for i := 0 to (SrcTbl.FieldsAI.Count - 1) do begin
+        s := s + ' ALTER COLUMN ' + SrcTbl.FieldsAI[i] + ' ' + SrcTbl.FieldsAI[i] + ' INTEGER';
       end;
-      dtmdlADS.conAdsBase.Execute(s);
+      SrcTbl.AdsT.AdsConnection.Execute(s);
     end;
   except
     Result := False;
   end;
 end;
 
-function ChangeInt2AI(AdsTbl: TTableInf): Boolean;
+// Integer => AutoInc
+function ChangeInt2AI(SrcTbl: TTableInf): Boolean;
 var
   i: Integer;
   s: string;
 begin
   Result := True;
   try
-    if (AdsTbl.FieldsAI.Count > 0) then begin
-      s := 'ALTER TABLE ' + AdsTbl.TableName;
-      for i := 0 to (AdsTbl.FieldsAI.Count - 1) do begin
-        s := s + ' ALTER COLUMN ' + AdsTbl.FieldsAI[i] + ' ' + AdsTbl.FieldsAI[i] + ' AUTOINC';
+    if (SrcTbl.FieldsAI.Count > 0) then begin
+      s := 'ALTER TABLE ' + SrcTbl.TableName;
+      for i := 0 to (SrcTbl.FieldsAI.Count - 1) do begin
+        s := s + ' ALTER COLUMN ' + SrcTbl.FieldsAI[i] + ' ' + SrcTbl.FieldsAI[i] + ' AUTOINC';
       end;
-      dtmdlADS.conAdsBase.Execute(s);
+      SrcTbl.AdsT.AdsConnection.Execute(s);
     end;
   except
     Result := False;
@@ -722,41 +719,40 @@ end;
 // Вставка в обнуляемый оригинал исправленных записей
 function ChangeOriginal(SrcTbl: TTableInf): Boolean;
 var
-  ec: Boolean;
+  ecb : Boolean;
   i: Integer;
   FileSrc, FileDst, TmpName, ss, sd: string;
   Span: TSpan;
 begin
   Result := False;
+
+  SrcTbl.AdsT.Active := False;
+  SrcTbl.AdsT.AdsConnection.Disconnect;
+
   FileSrc := AppPars.Path2Src + SrcTbl.TableName;
   FileDst := AppPars.Path2Tmp + SrcTbl.TableName + '.adt';
   TmpName := AppPars.Path2Src + ORGPFX + SrcTbl.TableName;
 
   if FileExists(FileSrc + '.adi') then
-    ec := DeleteFiles(FileSrc + '.adi');
+    ecb := DeleteFiles(FileSrc + '.adi');
 
-  DeleteFiles(TmpName + '.*');
+  ecb := DeleteFiles(TmpName + '.*');
 
   ss := FileSrc + '.adt';
   sd := TmpName + '.adt';
-  RenameFile(ss, sd);
+  ecb := RenameFile(ss, sd);
 
   if FileExists(FileSrc + '.adm') then begin
     ss := FileSrc + '.adm';
     sd := TmpName + '.adm';
-    ec := RenameFile(ss, sd);
+    ecb := RenameFile(ss, sd);
   end;
 
-  if (not dtmdlADS.conAdsBase.IsConnected) then
-    dtmdlADS.conAdsBase.IsConnected := True;
-
-  if (dtmdlADS.tblAds.Active) then
-    dtmdlADS.tblAds.Active := False;
-  dtmdlADS.tblAds.TableName := SrcTbl.TableName;
-
-  // Auto-create empty table
-  dtmdlADS.tblAds.Active := True;
-  dtmdlADS.tblAds.Active := False;
+  //--- Auto-create empty table
+  SrcTbl.AdsT.AdsConnection.IsConnected := True;
+  SrcTbl.AdsT.Active := True;
+  SrcTbl.AdsT.Active := False;
+  //---
 
   try
     if (ChangeAI2Int(SrcTbl) = True) then begin
@@ -765,27 +761,32 @@ begin
         ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT * FROM "' + FileDst + '" SRC';
         if (Length(SrcTbl.DmgdRIDs) > 0) then
           ss := ss + ' WHERE SRC.ROWID NOT IN (' + SrcTbl.DmgdRIDs + ')';
-        dtmdlADS.conAdsBase.Execute(ss);
+        SrcTbl.AdsT.AdsConnection.Execute(ss);
       end
       else begin
         // Загрузка интервалами хороших записей
         for i := 0 to SrcTbl.GoodSpans.Count - 1 do begin
           Span := SrcTbl.GoodSpans[i];
 
-          ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) + ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
-          dtmdlADS.conAdsBase.Execute(ss);
+          ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) +
+            ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
+          SrcTbl.AdsT.AdsConnection.Execute(ss);
 
         end;
 
       end;
       ChangeInt2AI(SrcTbl);
-      dtmdlADS.tblAds.Active := False;
-      dtmdlADS.conAdsBase.Disconnect;
+      SrcTbl.AdsT.AdsConnection.Disconnect;
 
     end;
+    Result := True;
   except
+    on E: EADSDatabaseError do begin
+      SrcTbl.ErrInfo.InsErr := E.ACEErrorCode;
+    end
+    else
+      SrcTbl.ErrInfo.InsErr := UE_BAD_INS;
   end;
-  Result := True;
 
 end;
 
@@ -808,6 +809,86 @@ begin
     ec := DeleteFiles(TmpName + '.adm');
 
   Result := ec;
+end;
+
+// Полный цикл для одной таблицы
+function FullFixOneTable(TName: string; Ptr2TableInf: Integer; FixPars: TAppPars; Q: TAdsQuery; T: TAdsTable): TTableInf;
+var
+  ec, i: Integer;
+  SrcTbl: TTableInf;
+begin
+
+  if (Ptr2TableInf = 0) then begin
+    SrcTbl := TTableInf.Create(TName, T, FixPars.SysAdsPfx);
+    ec := SrcTbl.Test1Table(SrcTbl, Q, FixPars.TMode);
+  end
+  else begin
+    SrcTbl := TTableInf(Ptr(Ptr2TableInf));
+    ec := SrcTbl.ErrInfo.ErrClass;
+  end;
+  Result := SrcTbl;
+
+  if (ec > 0) then begin
+    // Ошибки тестирования были
+    SrcTbl.ErrInfo.PrepErr := PrepTable(SrcTbl);
+    if (SrcTbl.ErrInfo.PrepErr = 0) then begin
+      // Исправление копии
+      SrcTbl.ErrInfo.FixErr := TblErrorController(SrcTbl);
+      if (SrcTbl.ErrInfo.FixErr = 0) then begin
+        // Исправление оригинала
+        if (ChangeOriginal(SrcTbl) = True) then
+          SrcTbl.ErrInfo.State := TST_RECVRD
+        else
+          SrcTbl.ErrInfo.State := INS_ERRORS;
+      end;
+    end;
+  end;
+end;
+
+
+// Full Proceed для всех/отмеченных
+procedure FullFixAllMarked(FixAll : Boolean = True);
+var
+  ec, i: Integer;
+  TName: string;
+  SrcTbl: TTableInf;
+begin
+  if (dtmdlADS.tblAds.Active) then
+    dtmdlADS.tblAds.Close;
+  with dtmdlADS.mtSrc do begin
+    First;
+    i := 0;
+    while not Eof do begin
+      i := i + 1;
+      if (dtmdlADS.FSrcMark.AsBoolean = True)
+      or (FixAll = True) then begin
+
+        TName := FieldByName('TableName').Value;
+
+        Edit;
+        SrcTbl := FullFixOneTable(TName, dtmdlADS.FSrcFixInf.AsInteger, AppPars, dtmdlADS.qAny, dtmdlADS.tblAds);
+        dtmdlADS.FSrcFixInf.AsInteger := Integer(SrcTbl);
+        
+        dtmdlADS.FSrcState.AsInteger  := SrcTbl.ErrInfo.State;
+        dtmdlADS.FSrcTestCode.AsInteger := SrcTbl.ErrInfo.ErrClass;
+        dtmdlADS.FSrcErrNative.AsInteger := SrcTbl.ErrInfo.NativeErr;
+
+        if (SrcTbl.ErrInfo.PrepErr > 0) then
+          dtmdlADS.FSrcFixCode.AsInteger := SrcTbl.ErrInfo.PrepErr
+        else
+          dtmdlADS.FSrcFixCode.AsInteger := SrcTbl.ErrInfo.FixErr;
+
+        TInfLast := SrcTbl;
+
+        dtmdlADS.FSrcMark.AsBoolean := False;
+        Post;
+
+      end;
+      Next;
+    end;
+
+  end;
+
 end;
 
 

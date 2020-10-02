@@ -15,6 +15,8 @@ const
   TST_GOOD    : Integer = 2;
   TST_RECVRD  : Integer = 4;
   TST_ERRORS  : Integer = 8;
+  FIX_ERRORS  : Integer = 16;
+  INS_ERRORS  : Integer = 32;
 
   // сортировка списка таблиц
   IDX_SRC     : String = 'OnState';
@@ -26,12 +28,16 @@ const
   AL_DUPCNT  : string = 'DUPCNT';
   AL_DUPCNTF : string = ',D.DUPCNT,';
 
-  // коды ошибок
+  // пользовательские коды ошибок
   // мусор в данных
   UE_BAD_DATA = 8901;
 
   // копия не получилась
   UE_BAD_PREP = 9001;
+  // Fix не успешный
+  UE_BAD_FIX  = 9011;
+  // Ins не успешный
+  UE_BAD_INS  = 9021;
 
 const
   EMSG_BAD_DATA : string = 'Некорректные данные!';
@@ -144,6 +150,54 @@ end;
 
 
 // может, пригодится. А может и нет
+
+
+
+// сведения о полях одной таблицы (SQL)
+{
+class procedure TTableInf.FieldsInfBySQL(AdsTbl: TTableInf; QWork : TAdsQuery);
+var
+  i: Integer;
+  s: string;
+  UFlds: TFieldsInf;
+  ACEField: TACEFieldDef;
+begin
+  AdsTbl.FieldsInf := TList.Create;
+  AdsTbl.FieldsAI := TStringList.Create;
+
+  AdsTbl.FieldsInfAds := TACEFieldDefs.Create(AdsTbl.AdsT.Owner);
+
+  with QWork do begin
+
+    Active := false;
+    SQL.Clear;
+    s := 'SELECT * FROM ' + AppPars.SysAdsPfx + 'COLUMNS WHERE PARENT=''' +
+      AdsTbl.TableName + '''';
+    SQL.Add(s);
+    Active := true;
+
+    First;
+    while not Eof do begin
+      UFlds := TFieldsInf.Create;
+      UFlds.Name := FieldByName('Name').AsString;
+      UFlds.FieldType := FieldByName('Field_Type').AsInteger;
+      UFlds.TypeSQL   := ArrSootv[UFlds.FieldType].Name;
+      if (UFlds.FieldType = ADS_AUTOINC) then
+        AdsTbl.FieldsAI.Add(UFlds.Name);
+      AdsTbl.FieldsInf.Add(UFlds);
+
+      ACEField := AdsTbl.FieldsInfAds.Add;
+      ACEField.FieldName := FieldByName('Name').AsString;
+      ACEField.FieldType := FieldByName('Field_Type').AsInteger;
+
+      Next;
+    end;
+
+  end;
+
+end;
+}
+
 {
 // Список ROWIDs с поврежденными данными (из списка Recno)
 function ConvertRecNo2RowID(BRecs: TList; AdsTbl: TAdsTable): string;

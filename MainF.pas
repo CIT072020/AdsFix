@@ -18,8 +18,6 @@ type
     LvidK: TLabel;
     MainMenu1: TMainMenu;
     N1: TMenuItem;
-    MemField: TkbmMemTable;
-    MemIndex: TkbmMemTable;
     Label2: TLabel;
     Ln: TLabel;
     Panel2: TPanel;
@@ -45,6 +43,7 @@ type
     procedure ChangePath2TmpClick(Sender: TObject; var Handled: Boolean);
     procedure btnTblListClick(Sender: TObject);
     procedure btnDelOrigClick(Sender: TObject);
+    procedure btnFullFixOneClick(Sender: TObject);
 
     procedure edtPath2TmpChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
@@ -365,6 +364,24 @@ begin
     AppPars.DelDupMode := TDelDupMode(rgDelDupMode.ItemIndex);
   end;
 end;
+
+
+
+
+
+
+
+// Full обработка отмеченных таблиц
+procedure TFormMain.btnFullFixOneClick(Sender: TObject);
+begin
+  TButtonControl(Sender).Enabled := False;
+  try
+    FullFixAllMarked(False);
+  finally
+    TButtonControl(Sender).Enabled := True;
+  end;
+end;
+
 
 end.
 

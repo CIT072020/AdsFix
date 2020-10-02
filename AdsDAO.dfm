@@ -105,7 +105,7 @@ object dtmdlADS: TdtmdlADS
       FieldName = 'ErrNative'
     end
     object FSrcFixInf: TIntegerField
-      FieldName = 'FixInf'
+      FieldName = 'TableInf'
     end
   end
   object dsSrc: TDataSource

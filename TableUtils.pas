@@ -31,9 +31,19 @@ type
 type
   // Info по ошибке
   TErrInfo = class
+  // Текущий статус таблицы
+    State    : Integer;
+  // Коды ошибок тестирования
     ErrClass : Integer;
     NativeErr  : Integer;
     MsgErr   : string;
+    // Код завершения "освобождения таблицы"
+    PrepErr  : Integer;
+    // Код завершения Fix таблицы
+    FixErr   : Integer;
+    // Код завершения INSERT таблицы
+    InsErr   : Integer;
+
   end;
 
 type
@@ -114,54 +124,6 @@ begin
   //if FField2 <> nil then FreeAndNil(FField2);
   inherited Destroy;
 end;
-
-
-// сведения о полях одной таблицы (SQL)
-{
-class procedure TTableInf.FieldsInfBySQL(AdsTbl: TTableInf; QWork : TAdsQuery);
-var
-  i: Integer;
-  s: string;
-  UFlds: TFieldsInf;
-  ACEField: TACEFieldDef;
-begin
-  AdsTbl.FieldsInf := TList.Create;
-  AdsTbl.FieldsAI := TStringList.Create;
-
-  AdsTbl.FieldsInfAds := TACEFieldDefs.Create(AdsTbl.AdsT.Owner);
-
-  with QWork do begin
-
-    Active := false;
-    SQL.Clear;
-    s := 'SELECT * FROM ' + AppPars.SysAdsPfx + 'COLUMNS WHERE PARENT=''' +
-      AdsTbl.TableName + '''';
-    SQL.Add(s);
-    Active := true;
-
-    First;
-    while not Eof do begin
-      UFlds := TFieldsInf.Create;
-      UFlds.Name := FieldByName('Name').AsString;
-      UFlds.FieldType := FieldByName('Field_Type').AsInteger;
-      UFlds.TypeSQL   := ArrSootv[UFlds.FieldType].Name;
-      if (UFlds.FieldType = ADS_AUTOINC) then
-        AdsTbl.FieldsAI.Add(UFlds.Name);
-      AdsTbl.FieldsInf.Add(UFlds);
-
-      ACEField := AdsTbl.FieldsInfAds.Add;
-      ACEField.FieldName := FieldByName('Name').AsString;
-      ACEField.FieldType := FieldByName('Field_Type').AsInteger;
-
-      Next;
-    end;
-
-  end;
-
-end;
-}
-
-
 
 
 // сведения о полях одной таблицы (SQL)
@@ -465,13 +427,15 @@ begin
       end;
 
     end;
+    AdsTI.ErrInfo.State := TST_GOOD;
 
   except
     on E: EADSDatabaseError do begin
       Result := E.ACEErrorCode;
-      AdsTI.ErrInfo.ErrClass := E.ACEErrorCode;
+      AdsTI.ErrInfo.ErrClass  := E.ACEErrorCode;
       AdsTI.ErrInfo.NativeErr := E.SQLErrorCode;
-      AdsTI.ErrInfo.MsgErr := E.Message;
+      AdsTI.ErrInfo.MsgErr    := E.Message;
+      AdsTI.ErrInfo.State     := TST_ERRORS;
     end;
   end;
 

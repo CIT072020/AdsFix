@@ -405,6 +405,7 @@ begin
       dtmdlADS.FSrcTCaption.AsString := s;
       dtmdlADS.FSrcTestCode.AsInteger := 0;
       dtmdlADS.FSrcState.AsInteger := TST_UNKNOWN;
+      dtmdlADS.FSrcFixInf.AsInteger := 0;
 
       dtmdlADS.mtSrc.Post;
       Next;
