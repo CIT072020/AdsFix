@@ -39,7 +39,18 @@ type
     RecN : Integer;
   end;
 
-
+type
+  TFixBase = class(TObject)
+  private
+    FPars : TAppPars;
+  protected
+  public
+    property FixPars : TAppPars read FPars write FPars;
+    
+    constructor Create(FixBasePars: TAppPars);
+    destructor Destroy; override;
+  published
+  end;
 
 procedure FixAllMarked(Sender: TObject);
 function ChangeOriginal(SrcTbl: TTableInf): Boolean;
@@ -56,6 +67,19 @@ implementation
 
 uses
   FileUtil;
+
+constructor TFixBase.Create(FixBasePars : TAppPars);
+begin
+  inherited Create;
+  FixPars := FixBasePars;
+end;
+
+
+destructor TFixBase.Destroy;
+begin
+  inherited Destroy;
+
+end;
 
 function CopyOneFile(const Src, Dst: string): Integer;
 begin
@@ -812,14 +836,14 @@ begin
 end;
 
 // Полный цикл для одной таблицы
-function FullFixOneTable(TName: string; Ptr2TableInf: Integer; FixPars: TAppPars; Q: TAdsQuery; T: TAdsTable): TTableInf;
+function FullFixOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer; FixPars: TAppPars; Q: TAdsQuery): TTableInf;
 var
   ec, i: Integer;
   SrcTbl: TTableInf;
 begin
 
   if (Ptr2TableInf = 0) then begin
-    SrcTbl := TTableInf.Create(TName, T, FixPars.SysAdsPfx);
+    SrcTbl := TTableInf.Create(TName, TID, Q.AdsConnection, FixPars.SysAdsPfx);
     ec := SrcTbl.Test1Table(SrcTbl, Q, FixPars.TMode);
   end
   else begin
@@ -855,6 +879,8 @@ var
 begin
   if (dtmdlADS.tblAds.Active) then
     dtmdlADS.tblAds.Close;
+
+  SortByState(False);
   with dtmdlADS.mtSrc do begin
     First;
     i := 0;
@@ -866,9 +892,9 @@ begin
         TName := FieldByName('TableName').Value;
 
         Edit;
-        SrcTbl := FullFixOneTable(TName, dtmdlADS.FSrcFixInf.AsInteger, AppPars, dtmdlADS.qAny, dtmdlADS.tblAds);
+        SrcTbl := FullFixOneTable(TName, FieldByName('Npp').Value, dtmdlADS.FSrcFixInf.AsInteger, AppPars, dtmdlADS.qAny);
         dtmdlADS.FSrcFixInf.AsInteger := Integer(SrcTbl);
-        
+
         dtmdlADS.FSrcState.AsInteger  := SrcTbl.ErrInfo.State;
         dtmdlADS.FSrcTestCode.AsInteger := SrcTbl.ErrInfo.ErrClass;
         dtmdlADS.FSrcErrNative.AsInteger := SrcTbl.ErrInfo.NativeErr;
@@ -888,6 +914,7 @@ begin
     end;
 
   end;
+  SortByState(True);
 
 end;
 

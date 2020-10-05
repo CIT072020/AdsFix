@@ -6,13 +6,12 @@ uses
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
   Dialogs, StdCtrls, CheckLst, Buttons, Mask, DBCtrlsEh, ExtCtrls, Grids,
   DBGridEh, Menus, DB,ComCtrls, FileCtrl, IniFiles, ShellAPI, TypInfo,
-  kbmMemTable, DBCtrls;
+  kbmMemTable, DBCtrls, FuncPr;
 
 type
   TFormMain = class(TForm)
     Panel1: TPanel;
     edtPath2Tmp: TDBEditEh;
-    btnTblList: TBitBtn;
     OpenDialog: TOpenDialog;
     LtabK: TLabel;
     LvidK: TLabel;
@@ -29,20 +28,23 @@ type
     BoxProc: TGroupBox;
     TabN: TLabel;
     Prog: TProgressBar;
-    chkAutoTest: TCheckBox;
     cbbPath2Src: TDBComboBoxEh;
     dbgAllT: TDBGridEh;
     lblPath2Tmp: TLabel;
     btnProcMark: TButton;
     btnGetFixed: TButton;
     btnDelOrig: TButton;
-    rgTestMode: TRadioGroup;
     btnTest: TButton;
     rgDelDupMode: TRadioGroup;
+    btnTblList: TBitBtn;
+    chkAutoTest: TCheckBox;
+    rgTestMode: TRadioGroup;
+    btnFixAll: TButton;
     btnFullFixOne: TButton;
     procedure ChangePath2TmpClick(Sender: TObject; var Handled: Boolean);
     procedure btnTblListClick(Sender: TObject);
     procedure btnDelOrigClick(Sender: TObject);
+    procedure btnFixAllClick(Sender: TObject);
     procedure btnFullFixOneClick(Sender: TObject);
 
     procedure edtPath2TmpChange(Sender: TObject);
@@ -202,6 +204,29 @@ begin
     AppPars.Path2Tmp := edtPath2Tmp.Text;
 end;
 
+
+// Построение списка таблиц для восстановления
+function List4Fix(Src : string) : Integer;
+var
+  IsAdsDict : Boolean;
+begin
+  Result := 0;
+  IsAdsDict := IsDictionary(Src);
+  if (IsCorrectSrc(Src, IsAdsDict) = True) then begin
+    AppPars.IsDict := IsAdsDict;
+    AppPars.Src := Src;
+    if (IsAdsDict = True) then
+      AppPars.Path2Src := ExtractFilePath(Src)
+    else
+      AppPars.Path2Src := IncludeTrailingPathDelimiter(Src);
+    if (PrepareList(Src) <= 0) then
+      Result := UE_NO_ADS;
+  end
+  else
+    Result := UE_NO_ADS;
+end;
+
+
 {-------------------------------------------------------------------------------
   Процедура: TFormMain.btnTblListClick(
   Построение списка таблиц для восстановления
@@ -211,22 +236,21 @@ end;
   Результат:    Нет
 -------------------------------------------------------------------------------}
 procedure TFormMain.btnTblListClick(Sender: TObject);
-var
-  IsAdsDict : Boolean;
 begin
-  IsAdsDict := IsDictionary(cbbPath2Src.Text);
-  if (IsCorrectSrc(cbbPath2Src.Text, IsAdsDict) = True) then begin
-    AppPars.IsDict := IsAdsDict;
-    AppPars.Src := cbbPath2Src.Text;
-    if (IsAdsDict = True) then
-      AppPars.Path2Src := ExtractFilePath(cbbPath2Src.Text)
-    else
-      AppPars.Path2Src := IncludeTrailingPathDelimiter(cbbPath2Src.Text);
-    PrepareList(cbbPath2Src.Text);
-    if (chkAutoTest.Checked) then
+  if (List4Fix(cbbPath2Src.Text) = 0) then begin
+    if (chkAutoTest.Checked = True) then
       TestSelected(True);
-  end;
+
+  end
+  else  // No Ads tables
+    ;
+
 end;
+
+
+
+
+
 
 
 
@@ -242,7 +266,7 @@ begin
     // when progress bar be ready - actually
     //dtmdlADS.mtSrc.DisableControls;
 
-    dtmdlADS.tblAds.AdsConnection := dtmdlADS.conAdsBase;
+    //dtmdlADS.tblAds.AdsConnection := dtmdlADS.conAdsBase;
     with dtmdlADS.mtSrc do begin
 
       First;
@@ -252,7 +276,7 @@ begin
         if ((dtmdlADS.FSrcState.AsInteger = TST_UNKNOWN) AND (ModeAll = True))
           OR ((dtmdlADS.FSrcMark.AsBoolean = True) AND (ModeAll = False)) then begin
 
-        //TableInf.TableName := dtmdlADS.FSrcTName.AsString;
+        //TableInf.TableName := ;
         //TableInf.AdsT := ;
         //TableInf.Owner := dtmdlADS.tblAds.Owner;
 
@@ -260,7 +284,7 @@ begin
 
           dtmdlADS.mtSrc.Edit;
 
-          TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds, dtmdlADS.SYSTEM_ALIAS);
+          TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.conAdsBase, dtmdlADS.SYSTEM_ALIAS);
           dtmdlADS.FSrcFixInf.AsInteger := Integer(TableInf);
 
           ec := TableInf.Test1Table(TableInf, dtmdlADS.qAny, AppPars.TMode);
@@ -332,6 +356,7 @@ begin
   end;
 end;
 
+
 // Протестировать выбранные
 procedure TFormMain.btnTestClick(Sender: TObject);
 begin
@@ -343,11 +368,13 @@ begin
   end;
 end;
 
+
 // Установка/сброс режима автотестирования
 procedure TFormMain.chkAutoTestClick(Sender: TObject);
 begin
   AppPars.AutoTest := TCheckBox(Sender).Checked;
 end;
+
 
 // Смена режима тестирования
 procedure TFormMain.rgTestModeClick(Sender: TObject);
@@ -357,6 +384,7 @@ begin
   end;
 end;
 
+
 // Смена режима выбора записей для удаления
 procedure TFormMain.rgDelDupModeClick(Sender: TObject);
 begin
@@ -364,11 +392,6 @@ begin
     AppPars.DelDupMode := TDelDupMode(rgDelDupMode.ItemIndex);
   end;
 end;
-
-
-
-
-
 
 
 // Full обработка отмеченных таблиц
@@ -382,6 +405,29 @@ begin
   end;
 end;
 
+// Проверить и исправить все
+procedure FullFix(Src: string);
+begin
+  if (List4Fix(Src) = 0) then begin
+    TestSelected(True);
+    FullFixAllMarked(False);
+  end
+  else
+  PutError('Таблицы не найдены!');
+
+end;
+
+
+// Проверить и исправить все
+procedure TFormMain.btnFixAllClick(Sender: TObject);
+begin
+  TButtonControl(Sender).Enabled := False;
+  try
+    FullFix(cbbPath2Src.Text);
+  finally
+    TButtonControl(Sender).Enabled := True;
+  end;
+end;
 
 end.
 

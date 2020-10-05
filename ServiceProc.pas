@@ -11,6 +11,7 @@ const
   USER_DFLT  = 'AdsSys';
   PASS_DFLT  = 'sysdba';
 
+  // —татусы таблицы
   TST_UNKNOWN : Integer = 1;
   TST_GOOD    : Integer = 2;
   TST_RECVRD  : Integer = 4;
@@ -29,6 +30,11 @@ const
   AL_DUPCNTF : string = ',D.DUPCNT,';
 
   // пользовательские коды ошибок
+  // ‘се есть гут
+  UE_OK       = 0;
+  // “аблицы не найдены
+  UE_NO_ADS   = 1;
+
   // мусор в данных
   UE_BAD_DATA = 8901;
 
@@ -61,11 +67,13 @@ type
     // ”становленные Login/Password
     ULogin   : String;
     UPass    : String;
+    // всего таблиц
+    TotTbls  : Integer;
     // –ежим тестировани€
     TMode    : TestMode;
     // —пособ удалени€ дубликатов
     DelDupMode : TDelDupMode;
-    // ‘лаг тестировани€ списка таблиц при получении списка
+    // ‘лаг тестировани€ при получении списка таблиц
     AutoTest : Boolean;
     // автопоиск наиболее подход€щих строк дл€ удалени€ из дубликатов
     AutoFix  : Boolean;
@@ -234,5 +242,212 @@ begin
 
 end;
 }
+
+
+
+// сведени€ о пол€х/индексах всех таблиц базы
+{
+procedure SrcFieldsIndexes;
+begin
+    with dtmdlADS.qSrcFields do begin
+      Active := false;
+      SQL.Clear;
+      SQL.Add('SELECT * FROM ' + dtmdlADS.SYSTEM_ALIAS + 'COLUMNS ORDER BY PARENT');
+      Active := true;
+    end;
+
+    with dtmdlADS.qSrcIndexes do begin
+      Active := false;
+      SQL.Clear;
+      SQL.Add('SELECT * FROM ' + dtmdlADS.SYSTEM_ALIAS + 'INDEXES');
+      Active := true;
+    end;
+end;
+}
+
+// сведени€ о пол€х одной таблицы (Filter)
+{
+procedure FieldInfByFilter(AdsTbl: TTableInf);
+var
+  i: Integer;
+  s: string;
+  UFlds: TFieldsInf;
+  ACEField : TACEFieldDef;
+begin
+  AdsTbl.FieldsInf := TList.Create;
+  AdsTbl.FieldsAI := TStringList.Create;
+
+  AdsTbl.FieldsInfAds := TACEFieldDefs.Create(AdsTbl.AdsT.Owner);
+
+  with dtmdlADS.qSrcFields do begin
+    Filtered := False;
+    Filter := 'PARENT = ''' + AdsTbl.TableName + '''';
+    Filtered := True;
+    First;
+    while not Eof do begin
+      UFlds := TFieldsInf.Create;
+      UFlds.Name := FieldByName('Name').AsString;
+      UFlds.FieldType := FieldByName('Field_Type').AsInteger;
+      if (UFlds.FieldType = ADS_AUTOINC) then
+        AdsTbl.FieldsAI.Add(UFlds.Name);
+      AdsTbl.FieldsInf.Add(UFlds);
+
+      ACEField := AdsTbl.FieldsInfAds.Add;
+      ACEField.FieldName := FieldByName('Name').AsString;
+      ACEField.FieldType := FieldByName('Field_Type').AsInteger;
+
+      Next;
+    end;
+
+  end;
+
+end;
+
+
+// сведени€ о пол€х одной таблицы (SQL)
+procedure FieldsInfBySQL(AdsTbl: TTableInf);
+var
+  i: Integer;
+  s: string;
+  UFlds: TFieldsInf;
+  ACEField: TACEFieldDef;
+  QF : TAdsQuery;
+begin
+  QF := dtmdlADS.qAny;
+  AdsTbl.FieldsInf := TList.Create;
+  AdsTbl.FieldsAI := TStringList.Create;
+
+  AdsTbl.FieldsInfAds := TACEFieldDefs.Create(AdsTbl.AdsT.Owner);
+
+  with QF do begin
+
+    Active := false;
+    SQL.Clear;
+    s := 'SELECT * FROM ' + dtmdlADS.SYSTEM_ALIAS + 'COLUMNS WHERE PARENT=''' +
+      AdsTbl.TableName + '''';
+    SQL.Add(s);
+    Active := true;
+
+    First;
+    while not Eof do begin
+      UFlds := TFieldsInf.Create;
+      UFlds.Name := FieldByName('Name').AsString;
+      UFlds.FieldType := FieldByName('Field_Type').AsInteger;
+      UFlds.TypeSQL   := ArrSootv[UFlds.FieldType].Name;
+      if (UFlds.FieldType = ADS_AUTOINC) then
+        AdsTbl.FieldsAI.Add(UFlds.Name);
+      AdsTbl.FieldsInf.Add(UFlds);
+
+      ACEField := AdsTbl.FieldsInfAds.Add;
+      ACEField.FieldName := FieldByName('Name').AsString;
+      ACEField.FieldType := FieldByName('Field_Type').AsInteger;
+
+      Next;
+    end;
+
+  end;
+
+end;
+}
+
+
+
+
+{
+procedure GetFieldsInf(AdsTbl: TTableInf);
+var
+  i: Integer;
+  s: string;
+  UFlds: TFieldsInf;
+begin
+  //AdsTbl.FieldsInf := Tlist.Create;
+  AdsTbl.FieldsInfAds := TACEFieldDefs.Create(AdsTbl.AdsT.Owner);
+
+  AdsTbl.FieldsInf := TList.Create;
+
+  AdsTbl.FieldsAI := TStringList.Create;
+
+  with dtmdlADS.qAny do begin
+    if Active then
+      Close;
+    SQL.Text := 'SELECT Name, Field_Type FROM ' + dtmdlADS.SYSTEM_ALIAS + 'COLUMNS WHERE (PARENT = ''' + AdsTbl.TableName + ''')';
+    Active := True;
+    First;
+    while not Eof do begin
+      UFlds := TFieldsInf.Create;
+      UFlds.Name := FieldByName('Name').AsString;
+      UFlds.FieldType := FieldByName('Field_Type').AsInteger;
+      if (UFlds.FieldType = ADS_AUTOINC) then
+        AdsTbl.FieldsAI.Add(UFlds.Name);
+      AdsTbl.FieldsInf.Add(UFlds);
+      Next;
+    end;
+
+  end;
+
+end;
+}
+
+
+
+
+// тестирование одной таблицы на ошибки
+{
+function Test1Table(AdsTI: TTableInf; Check: TestMode): Integer;
+var
+  iFld, ec: Integer;
+  TypeName, s: string;
+  ErrInf: TStringList;
+  AdsFT: UNSIGNED16;
+  QA: TAdsQuery;
+  CN: TAdsConnection;
+begin
+  Result := 0;
+  if (AdsTI.AdsT.Active) then
+    AdsTI.AdsT.Close;
+  AdsTI.AdsT.TableName := AdsTI.TableName;
+
+  try
+    FieldsInfBySQL(AdsTI);
+    IndexesInf(AdsTI);
+
+    // Easy Mode and others
+    AdsTI.AdsT.Open;
+    AdsTI.AdsT.Close;
+
+    if (Check = Medium)
+      OR (Check = Slow) then begin
+          if (AdsTI.IndCount > 0) then begin
+        // есть уникальные индексы
+            iFld := Field4Alter(AdsTI);
+            if (iFld >= 0) then begin
+              s := AdsTI.FieldsInfAds[iFld].FieldName;
+              TypeName := ArrSootv[AdsTI.FieldsInfAds[iFld].FieldType].Name;
+              s := 'ALTER TABLE ' + AdsTI.TableName + ' ALTER COLUMN ' + s + ' ' + s + ' ' + TypeName;
+              dtmdlADS.conAdsBase.Execute(s);
+              s := AppPars.Path2Src + AdsTI.TableName + '*.BAK';
+              DeleteFiles(s);
+            end;
+          end;
+
+      if (Check = Slow) then begin
+
+      end;
+
+    end;
+
+  except
+    on E: EADSDatabaseError do begin
+      Result := E.ACEErrorCode;
+      AdsTI.ErrInfo.ErrClass := E.ACEErrorCode;
+      AdsTI.ErrInfo.NativeErr := E.SQLErrorCode;
+      AdsTI.ErrInfo.MsgErr := E.Message;
+    end;
+  end;
+
+end;
+}
+
+
 
 end.

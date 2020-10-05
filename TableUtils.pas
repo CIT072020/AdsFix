@@ -58,6 +58,8 @@ type
     FileTmp   : string;
     // количество записей (теоретически)
     RecCount  : Integer;
+    // количество записей (фактически)
+    LastGood  : Integer;
     // количество уникальных индексов
     IndCount  : Integer;
     //
@@ -74,15 +76,15 @@ type
     List4Del  : String;
 
     DmgdRIDs  : string;
-    // количество записей (фактически)
-    LastGood  : Integer;
     // список интервалов для INSERT
     GoodSpans : TList;
 
     TotalDel  : Integer;
     RowsFixed : Integer;
     //property Owner : TObject read FOwner write FOwner;
-    constructor Create(TName : string; AT: TAdsTable; AnsiPfx : string);
+    //constructor Create(TName : string; AT: TAdsTable; AnsiPfx : string);
+    //constructor Create(TName : string; Conn: TAdsConnection; AnsiPfx : string);
+    constructor Create(TName : string; TID : Integer; Conn: TAdsConnection; AnsiPfx : string);
     destructor Destroy; override;
 
     //class procedure FieldsInfBySQL(AdsTbl: TTableInf; QWork : TAdsQuery);
@@ -104,13 +106,16 @@ uses
   Math,
   DBFunc;
 
-constructor TTableInf.Create(TName : string; AT: TAdsTable; AnsiPfx : string);
+constructor TTableInf.Create(TName : string; TID : Integer; Conn: TAdsConnection; AnsiPfx : string);
 begin
   inherited Create;
 
   Self.TableName := TName;
-  Self.AdsT := AT;
+  Self.AdsT := TAdsTable.Create(Conn.Owner);
+  Self.AdsT.Name := 'tbl' + IntToStr(TID);
   Self.AdsT.TableName := TName;
+  Self.AdsT.AdsConnection := Conn;
+
   Self.FSysPfx := AnsiPfx;
 
   IndexInf  := TList.Create;
