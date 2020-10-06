@@ -106,20 +106,45 @@ uses
   Math,
   DBFunc;
 
+
+function TableExists(Owner : TComponent; CName : string) : TAdsTable;
+var
+  i : Integer;
+begin
+  Result := nil;
+  // Поиск таблицы в прежнем списке
+  for i := 0 to Owner.ComponentCount -1 do
+    if ( CName = Owner.Components[i].Name ) then begin
+      Result := TAdsTable(Owner.Components[i]);
+      Result.Close;
+      Break;
+    end;
+end;
+
 constructor TTableInf.Create(TName : string; TID : Integer; Conn: TAdsConnection; AnsiPfx : string);
+var
+  cName : string;
+  T : TAdsTable;
 begin
   inherited Create;
 
+  cName := CMPNT_NAME + IntToStr(TID);
   Self.TableName := TName;
-  Self.AdsT := TAdsTable.Create(Conn.Owner);
-  Self.AdsT.Name := 'tbl' + IntToStr(TID);
+  T := TableExists(Conn.Owner, cName);
+  if ( not Assigned(T) ) then begin
+    Self.AdsT := TAdsTable.Create(Conn.Owner);
+    Self.AdsT.Name := cName;
+    Self.AdsT.AdsConnection := Conn;
+  end
+  else
+    Self.AdsT := T;
+
   Self.AdsT.TableName := TName;
-  Self.AdsT.AdsConnection := Conn;
 
   Self.FSysPfx := AnsiPfx;
 
-  IndexInf  := TList.Create;
   ErrInfo   := TErrInfo.Create;
+  IndexInf  := TList.Create;
   GoodSpans := TList.Create;
 end;
 
@@ -310,7 +335,6 @@ begin
       // Не пусто или не NULL
         FI := TFieldsInf(FInf[j]);
         if (FI.FieldType in ADS_DATES) then begin
-          //t := Rec[j].Value;
           t := v;
           Year := YearOf(t);
           if (Year <= 1) or (Year > 2100) then
@@ -320,6 +344,11 @@ begin
             if (Ms < 0) or (Ms > MSEC_PER_DAY) then
               raise Exception.Create(EMSG_BAD_DATA);
           end
+        end
+        else if (FI.FieldType = ADS_AUTOINC) then begin
+          Ms := v;
+          if (Ms < 0) then
+              raise Exception.Create(EMSG_BAD_DATA);
         end;
       end;
 
@@ -401,6 +430,7 @@ begin
     FieldsInfo;
     IndexesInf(AdsTI, QWork);
     AdsTI.RecCount := RecsBySQL(QWork, AdsTI.TableName);
+    AdsTI.ErrInfo.State := TST_UNKNOWN;
 
     // Easy Mode and others
     AdsTI.AdsT.Open;

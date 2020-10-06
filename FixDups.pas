@@ -46,20 +46,21 @@ type
   protected
   public
     property FixPars : TAppPars read FPars write FPars;
-    
+
     constructor Create(FixBasePars: TAppPars);
     destructor Destroy; override;
   published
   end;
 
-procedure FixAllMarked(Sender: TObject);
-function ChangeOriginal(SrcTbl: TTableInf): Boolean;
-function DelOriginalTable(AdsTbl: TTableInf): Boolean;
+procedure FixAllMarked;
+// Исправить оригинал для отмеченных
+procedure ChangeOriginalAllMarked;
+procedure DelBackUps;
 
+// Easy Mode - one button
 procedure FullFixAllMarked(FixAll : Boolean = True);
 
 var
-  TInfLast,
   TableInf : TTableInf;
   UInd : TIndexInf;
 
@@ -183,34 +184,34 @@ begin
 end;
 
 
-  function RowFill(AdsTbl: TTableInf; RowID: string; Q1F : TAdsQuery) : integer;
-  var
-    FT, RowWeight, i: integer;
-    sField, sEmpCond, s4All, s: string;
-  begin
-    Result := 0;
-    s4All := ' WHERE (ROWID=''' + RowID + ''') AND ';
-    RowWeight := 0;
-    Q1F.Active := False;
+function RowFill(AdsTbl: TTableInf; RowID: string; Q1F: TAdsQuery): integer;
+var
+  FT, RowWeight, i: integer;
+  sField, sEmpCond, s4All, s: string;
+begin
+  Result := 0;
+  s4All := ' WHERE (ROWID=''' + RowID + ''') AND ';
+  RowWeight := 0;
+  Q1F.Active := False;
 
-    for i := 0 to AdsTbl.FieldsInfAds.Count - 1 do begin
+  for i := 0 to AdsTbl.FieldsInfAds.Count - 1 do begin
 
-      if (i > 1) then
-        s := s + ' OR ';
+    if (i > 1) then
+      s := s + ' OR ';
 
-      sField := AdsTbl.FieldsInfAds[i].FieldName;
-      FT := AdsTbl.FieldsInfAds[i].FieldType;
-      sEmpCond := EmptyFCond(sField, FT, True);
-      s := 'SELECT ' + sField + ' FROM ' + AdsTbl.TableName + s4All + sEmpCond;
-      Q1F.SQL.Clear;
-      Q1F.SQL.Add(s);
-      Q1F.Active := True;
-      if (Q1F.RecordCount > 0) then
-        RowWeight := RowWeight + FieldWeight(Q1F, sField, FT);
+    sField := AdsTbl.FieldsInfAds[i].FieldName;
+    FT := AdsTbl.FieldsInfAds[i].FieldType;
+    sEmpCond := EmptyFCond(sField, FT, True);
+    s := 'SELECT ' + sField + ' FROM ' + AdsTbl.TableName + s4All + sEmpCond;
+    Q1F.SQL.Clear;
+    Q1F.SQL.Add(s);
+    Q1F.Active := True;
+    if (Q1F.RecordCount > 0) then
+      RowWeight := RowWeight + FieldWeight(Q1F, sField, FT);
 
-    end;
-    Result := RowWeight;
   end;
+  Result := RowWeight;
+end;
 
 
 
@@ -357,11 +358,7 @@ begin
     with dtmdlADS.qDupGroups do begin
       if Active then
         Close;
-      if (dtmdlADS.cnABTmp.IsConnected) then
-        dtmdlADS.cnABTmp.IsConnected := False;
-
-      dtmdlADS.cnABTmp.ConnectPath := AppPars.Path2Tmp;
-      dtmdlADS.cnABTmp.IsConnected := True;
+        
       AdsConnection := dtmdlADS.cnABTmp;
 
       TblInf.DupRows := TList.Create;
@@ -456,15 +453,14 @@ end;
 
 
 // Коррктировка таблицы с поврежденными данными (Scan by Skip)
-function Fix8901(SrcTblInf: TTableInf; DstPath: string): Integer;
+//function Fix8901(SrcTblInf: TTableInf; DstPath: string): Integer;
+function Fix8901SkipScan(SrcTblInf: TTableInf; DstPath: string): Integer;
 var
-  BadField,
-  Step,
-  j, i: Integer;
+  BadField, Step, j, i: Integer;
   sExec: string;
   TT: TAdsTable;
-  BadFInRec : TBadRec;
-  BadRecs : TList;
+  BadFInRec: TBadRec;
+  BadRecs: TList;
 begin
   try
     Result := 0;
@@ -482,8 +478,6 @@ begin
     TT.TableName := SrcTblInf.TableName;
     TT.Active := True;
 
-    //SrcTblInf.RecCount := TT.RecordCount;
-
     if (TT.RecordCount > 0) then begin
       BadRecs := TList.Create;
       i := 0;
@@ -495,14 +489,12 @@ begin
           BadField := Read1RecEx(TT.Fields, SrcTblInf.FieldsInf);
           if (BadField >= 0) then begin
             BadFInRec := TBadRec.Create;
-            //BadFInRec.RecNo     := TT.RecNo;
-            BadFInRec.RecNo     := i;
+            BadFInRec.RecNo := i;
             BadFInRec.BadFieldI := BadField;
             BadRecs.Add(BadFInRec);
           end
           else
-          SrcTblInf.LastGood := i;
-
+            SrcTblInf.LastGood := i;
 
         except
 
@@ -521,8 +513,11 @@ begin
 end;
 
 
+
+
 // Коррктировка таблицы с поврежденными данными (Scan by SQL-Select)
-function Fix8901SQLScan(SrcTblInf: TTableInf; DstPath: string): Integer;
+//function Fix8901SQLScan(SrcTblInf: TTableInf; DstPath: string): Integer;
+function Fix8901(SrcTblInf: TTableInf; DstPath: string): Integer;
 var
   BadField, Step, j, i: Integer;
   sExec: string;
@@ -533,21 +528,6 @@ var
 begin
   try
     Result := 0;
-    if (dtmdlADS.cnABTmp.IsConnected) then
-      dtmdlADS.cnABTmp.IsConnected := False;
-
-    dtmdlADS.cnABTmp.ConnectPath := AppPars.Path2Tmp;
-    dtmdlADS.cnABTmp.IsConnected := True;
-{
-    TT := dtmdlADS.tblTmp;
-    if (TT.Active = True) then
-      TT.Close;
-    TT.AdsConnection := dtmdlADS.cnABTmp;
-    TT.TableName := SrcTblInf.TableName;
-    TT.Active := True;
-    SrcTblInf.RecCount := TT.RecordCount;
-    TT.Close;
-}
 
     Q := TAdsQuery.Create(dtmdlADS.cnABTmp.Owner);
     Q.AdsConnection := dtmdlADS.cnABTmp;
@@ -576,6 +556,7 @@ begin
         end;
 
       end;
+      Q.Close;
       Q.AdsCloseSQLStatement;
     end;
 
@@ -592,110 +573,98 @@ end;
 // вызов метода для кода ошибки
 function TblErrorController(SrcTbl: TTableInf): Integer;
 begin
-
-  case SrcTbl.ErrInfo.ErrClass of
-    7008,
-    7200, 7207:
-      begin
-        SrcTbl.RowsFixed := Fix7207(SrcTbl, SrcTbl.FileTmp);
-      end;
-    UE_BAD_DATA:
-      begin
-        SrcTbl.RowsFixed := Fix8901(SrcTbl, SrcTbl.FileTmp);
-      end;
-  end;
-
-end;
-
-
-
-
-
-
-
-
-
-
-function PrepTable(SrcTbl: TTableInf): Integer;
-var
-  ec: Integer;
-  FileSrc, FileDst, s: string;
-  ErrInf: TStringList;
-begin
-  Result := 0;
   try
 
-    FileSrc := AppPars.Path2Src + SrcTbl.TableName;
-    SrcTbl.FileTmp := AppPars.Path2Tmp + SrcTbl.TableName + '.adt';
+    if (dtmdlADS.cnABTmp.IsConnected) then
+      dtmdlADS.cnABTmp.IsConnected := False;
 
-    if (CopyOneFile(FileSrc + '.adt', AppPars.Path2Tmp) = 0) then begin
+    dtmdlADS.cnABTmp.ConnectPath := AppPars.Path2Tmp;
+    dtmdlADS.cnABTmp.IsConnected := True;
 
-      if FileExists(FileSrc + '.adm') then begin
-        if (CopyOneFile(FileSrc + '.adm', AppPars.Path2Tmp) = 0) then begin
+    case SrcTbl.ErrInfo.ErrClass of
+      7008, 7200, 7207:
+        begin
+          SrcTbl.RowsFixed := Fix7207(SrcTbl, SrcTbl.FileTmp);
         end;
-      end;
-      if AdsDDFreeTable(PAnsiChar(SrcTbl.FileTmp), nil) = AE_FREETABLEFAILED then begin
-        Result := 1;
-        ErrInf.Text := 'Error while free Table from datadictionary';
-      end;
+      UE_BAD_DATA:
+        begin
+          SrcTbl.RowsFixed := Fix8901(SrcTbl, SrcTbl.FileTmp);
+        end;
     end;
+    SrcTbl.ErrInfo.State := FIX_GOOD;
 
   except
-
-    on E: EADSDatabaseError do begin
-      Result := E.ACEErrorCode;
-    end;
-
+    SrcTbl.ErrInfo.State := FIX_ERRORS;
+    SrcTbl.ErrInfo.PrepErr := UE_BAD_FIX;
   end;
 
 end;
 
-// Исправить все отмеченные
-procedure FixAllMarked(Sender: TObject);
-var
-  ec, i: Integer;
 
-  //PSrcTbl: ^TTableInf;
+// Копия оригинала и освобождение таблицы
+function PrepTable(SrcTbl: TTableInf): Integer;
+var
+  s,
+  FileSrc,
+  FileDst: string;
+begin
+  Result := UE_BAD_PREP;
+  try
+    FileSrc := AppPars.Path2Src + SrcTbl.TableName;
+    SrcTbl.FileTmp := AppPars.Path2Tmp + SrcTbl.TableName + '.adt';
+    s := FileSrc + '.adt';
+    if (CopyOneFile(s, AppPars.Path2Tmp) <> 0) then
+      raise Exception.Create('Ошибка копирования ' + s);
+    s := FileSrc + '.adm';
+    if FileExists(s) then begin
+      if (CopyOneFile(s, AppPars.Path2Tmp) <> 0) then
+        raise Exception.Create('Ошибка копирования ' + s);
+    end;
+    if AdsDDFreeTable(PAnsiChar(SrcTbl.FileTmp), nil) = AE_FREETABLEFAILED then
+      raise EADSDatabaseError.Create(SrcTbl.AdsT, UE_BAD_PREP, 'Ошибка освобождения таблицы');
+    SrcTbl.ErrInfo.PrepErr := 0;
+    Result := 0;
+  except
+    SrcTbl.ErrInfo.State   := FIX_ERRORS;
+    SrcTbl.ErrInfo.PrepErr := UE_BAD_PREP;
+  end;
+end;
+
+
+// Исправить все отмеченные
+procedure FixAllMarked;
+var
+  ErrCode, i: Integer;
   SrcTbl: TTableInf;
 begin
-  if (dtmdlADS.tblAds.Active) then
-    dtmdlADS.tblAds.Close;
   with dtmdlADS.mtSrc do begin
     First;
     i := 0;
     while not Eof do begin
       i := i + 1;
       if (dtmdlADS.FSrcMark.AsBoolean = True) then begin
-
-        //SrcTbl := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.tblAds, dtmdlADS.SYSTEM_ALIAS);
-        //PSrcTbl := Pointer(dtmdlADS.FSrcFixInf.AsInteger);
-        //SrcTbl := TTableInf(dtmdlADS.FSrcFixInf);
         SrcTbl := TTableInf(Ptr(dtmdlADS.FSrcFixInf.AsInteger));
+        if (Assigned(SrcTbl)) then begin
+          // Тестирование выполнялось, объект создан
+          dtmdlADS.mtSrc.Edit;
 
-        //SrcTbl.AdsT := dtmdlADS.tblAds;
-        //SrcTbl.Owner := dtmdlADS.tblAds.Owner;
-        //SrcTbl.AdsT.TableName := dtmdlADS.FSrcTName.AsString;
+          ErrCode := PrepTable(SrcTbl);
+          if (ErrCode = 0) then begin
+            dtmdlADS.FSrcFixCode.AsInteger := TblErrorController(SrcTbl);
+          end
+          else begin
+            dtmdlADS.FSrcFixCode.AsInteger := ErrCode;
+          end;
 
-        //SrcTbl.ErrInfo.ErrClass := dtmdlADS.FSrcTestCode.AsInteger;
-        //SrcTbl.ErrInfo.NativeErr := dtmdlADS.FSrcErrNative.AsInteger;
-
-        dtmdlADS.mtSrc.Edit;
-        ec := PrepTable(SrcTbl);
-        if (ec = 0) then
-          dtmdlADS.FSrcFixCode.AsInteger := TblErrorController(SrcTbl)
-        else
-          dtmdlADS.FSrcFixCode.AsInteger := UE_BAD_PREP;
-        TInfLast := SrcTbl;
-        dtmdlADS.FSrcMark.AsBoolean := False;
-        dtmdlADS.mtSrc.Post;
-
+          dtmdlADS.mtSrc.Post;
+        end;
       end;
       Next;
     end;
-
   end;
-
 end;
+
+
 
 
 // AutoInc => Integer
@@ -721,8 +690,9 @@ end;
 // Integer => AutoInc
 function ChangeInt2AI(SrcTbl: TTableInf): Boolean;
 var
-  i: Integer;
-  s: string;
+  ec : Boolean;
+  i  : Integer;
+  s  : string;
 begin
   Result := True;
   try
@@ -732,6 +702,7 @@ begin
         s := s + ' ALTER COLUMN ' + SrcTbl.FieldsAI[i] + ' ' + SrcTbl.FieldsAI[i] + ' AUTOINC';
       end;
       SrcTbl.AdsT.AdsConnection.Execute(s);
+      ec := DeleteFiles(AppPars.Path2Src + SrcTbl.TableName + '.ad?.bak');
     end;
   except
     Result := False;
@@ -814,7 +785,54 @@ begin
 
 end;
 
+// Исправить оригинал для отмеченных
+procedure ChangeOriginalAllMarked;
+var
+  GoodChange: Boolean;
+  i: Integer;
+  SrcTbl: TTableInf;
+begin
+  with dtmdlADS.mtSrc do begin
+    First;
+    i := 0;
+    while not Eof do begin
+      i := i + 1;
+      if (dtmdlADS.FSrcMark.AsBoolean = True) then begin
+        // для отмеченных
 
+        SrcTbl := TTableInf(Ptr(dtmdlADS.FSrcFixInf.AsInteger));
+        if (Assigned(SrcTbl)) then begin
+          // Тестирование выполнялось, объект создан
+          if (SrcTbl.ErrInfo.State = FIX_GOOD) then begin
+
+            dtmdlADS.mtSrc.Edit;
+            GoodChange := ChangeOriginal(SrcTbl);
+
+            if (GoodChange = True) then begin
+          // успешно вствлено
+              dtmdlADS.FSrcFixCode.AsInteger := SrcTbl.ErrInfo.InsErr;
+              dtmdlADS.FSrcMark.AsBoolean := False;
+            end
+            else begin
+          // ошибки вставки
+              dtmdlADS.FSrcFixCode.AsInteger := UE_BAD_INS;
+            end;
+
+            dtmdlADS.mtSrc.Post;
+          end;
+        end;
+      end;
+      Next;
+    end;
+
+  end;
+
+end;
+
+
+
+
+// Удаление сохраненных оригиналов с ошибками
 function DelOriginalTable(AdsTbl: TTableInf): Boolean;
 var
   ec: Boolean;
@@ -834,6 +852,47 @@ begin
 
   Result := ec;
 end;
+
+// Удалить BAckup оригиналов
+procedure DelBackUps;
+var
+  GoodChange: Boolean;
+  i: Integer;
+  SrcTbl: TTableInf;
+begin
+  with dtmdlADS.mtSrc do begin
+    First;
+    i := 0;
+    while not Eof do begin
+      i := i + 1;
+      if (dtmdlADS.FSrcMark.AsBoolean = True) then begin
+        // для отмеченных
+        SrcTbl := TTableInf(Ptr(dtmdlADS.FSrcFixInf.AsInteger));
+        if (SrcTbl.ErrInfo.FixErr = 0) and (SrcTbl.ErrInfo.FixErr = 0) then begin
+          // исправление было и успешное
+          dtmdlADS.mtSrc.Edit;
+          GoodChange := ChangeOriginal(SrcTbl);
+
+          if (GoodChange = True) then begin
+          // успешно вствлено
+            dtmdlADS.FSrcFixCode.AsInteger := SrcTbl.ErrInfo.InsErr;
+            dtmdlADS.FSrcMark.AsBoolean := False;
+          end
+          else begin
+          // ошибки вставки
+            dtmdlADS.FSrcFixCode.AsInteger := UE_BAD_INS;
+          end;
+
+          dtmdlADS.mtSrc.Post;
+        end;
+      end;
+      Next;
+    end;
+
+  end;
+
+end;
+
 
 // Полный цикл для одной таблицы
 function FullFixOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer; FixPars: TAppPars; Q: TAdsQuery): TTableInf;
@@ -861,7 +920,7 @@ begin
       if (SrcTbl.ErrInfo.FixErr = 0) then begin
         // Исправление оригинала
         if (ChangeOriginal(SrcTbl) = True) then
-          SrcTbl.ErrInfo.State := TST_RECVRD
+          SrcTbl.ErrInfo.State := INS_GOOD
         else
           SrcTbl.ErrInfo.State := INS_ERRORS;
       end;
@@ -903,8 +962,6 @@ begin
           dtmdlADS.FSrcFixCode.AsInteger := SrcTbl.ErrInfo.PrepErr
         else
           dtmdlADS.FSrcFixCode.AsInteger := SrcTbl.ErrInfo.FixErr;
-
-        TInfLast := SrcTbl;
 
         dtmdlADS.FSrcMark.AsBoolean := False;
         Post;

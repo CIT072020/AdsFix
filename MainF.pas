@@ -266,7 +266,6 @@ begin
     // when progress bar be ready - actually
     //dtmdlADS.mtSrc.DisableControls;
 
-    //dtmdlADS.tblAds.AdsConnection := dtmdlADS.conAdsBase;
     with dtmdlADS.mtSrc do begin
 
       First;
@@ -275,12 +274,6 @@ begin
         i := i + 1;
         if ((dtmdlADS.FSrcState.AsInteger = TST_UNKNOWN) AND (ModeAll = True))
           OR ((dtmdlADS.FSrcMark.AsBoolean = True) AND (ModeAll = False)) then begin
-
-        //TableInf.TableName := ;
-        //TableInf.AdsT := ;
-        //TableInf.Owner := dtmdlADS.tblAds.Owner;
-
-        //TableInf.AdsT.TableName := dtmdlADS.FSrcTName.AsString;
 
           dtmdlADS.mtSrc.Edit;
 
@@ -300,6 +293,7 @@ begin
             ec := TST_GOOD;
             end;
           dtmdlADS.FSrcState.AsInteger := ec;
+
           dtmdlADS.mtSrc.Post;
         end;
         Next;
@@ -325,7 +319,7 @@ begin
     s := IsCorrectTmp(AppPars.Path2Tmp);
     if (Length(s) > 0) then begin
       AppPars.Path2Tmp := s;
-      FixAllMarked(Sender);
+      FixAllMarked;
       if (dtmdlADS.conAdsBase.IsConnected = True) then
         dtmdlADS.conAdsBase.IsConnected := False;
     end;
@@ -339,22 +333,25 @@ procedure TFormMain.btnGetFixedClick(Sender: TObject);
 begin
   TButtonControl(Sender).Enabled := False;
   try
-    ChangeOriginal(TInfLast);
+    ChangeOriginalAllMarked;
   finally
     TButtonControl(Sender).Enabled := True;
   end;
 end;
+
 
 // Удалить копии оригинала
 procedure TFormMain.btnDelOrigClick(Sender: TObject);
 begin
   TButtonControl(Sender).Enabled := False;
   try
-    DelOriginalTable(TInfLast);
+    DelBackUps;
   finally
     TButtonControl(Sender).Enabled := True;
   end;
 end;
+
+
 
 
 // Протестировать выбранные

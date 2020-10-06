@@ -14,10 +14,14 @@ const
   // Статусы таблицы
   TST_UNKNOWN : Integer = 1;
   TST_GOOD    : Integer = 2;
-  TST_RECVRD  : Integer = 4;
-  TST_ERRORS  : Integer = 8;
-  FIX_ERRORS  : Integer = 16;
-  INS_ERRORS  : Integer = 32;
+  TST_ERRORS  : Integer = 4;
+
+  FIX_ERRORS  : Integer = 8;
+  FIX_GOOD    : Integer = 16;
+  FIX_NOTHG   : Integer = 32;
+
+  INS_GOOD    : Integer = 64;
+  INS_ERRORS  : Integer = 128;
 
   // сортировка списка таблиц
   IDX_SRC     : String = 'OnState';
@@ -49,6 +53,10 @@ const
   EMSG_BAD_DATA : string = 'Некорректные данные!';
 
 const
+  CMPNT_NAME = 'tblSrcAds';  
+
+const
+  // Выборочных чтений таблицы при среднем уровне тестирования
   MAX_READ_MEDIUM : Integer = 5000;
   
 type

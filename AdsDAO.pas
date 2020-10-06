@@ -181,6 +181,23 @@ begin
   dtmdlADS.conAdsBase.IsConnected := True;
 end;
 
+{
+procedure ClearTablesList(Owner : TComponent);
+var
+  iM,
+  i : Integer;
+begin
+  iM := Owner.ComponentCount;
+  // Удалить все таблицы прежнего списка
+  for i := 0 to Owner.ComponentCount -1 do
+    if ( Pos(CMPNT_NAME, Owner.Components[i].Name) > 0 ) then begin
+      TAdsTable(Owner.Components[i]).Close;
+      Owner.Components[i].Free;
+    end;
+end;
+}
+
+
 // Список таблиц - в MemTable
 function TablesListFromDic(QA: TAdsQuery): Integer;
 var
@@ -190,6 +207,7 @@ var
 begin
   i := 0;
   with QA do begin
+    //ClearTablesList(QA.Owner);
     dtmdlADS.mtSrc.Close;
     dtmdlADS.mtSrc.Active := True;
 
