@@ -67,7 +67,8 @@ var
 implementation
 
 uses
-  FileUtil;
+  FileUtil,
+  Math;
 
 constructor TFixBase.Create(FixBasePars : TAppPars);
 begin
@@ -453,8 +454,8 @@ end;
 
 
 // Коррктировка таблицы с поврежденными данными (Scan by Skip)
-//function Fix8901(SrcTblInf: TTableInf; DstPath: string): Integer;
-function Fix8901SkipScan(SrcTblInf: TTableInf; DstPath: string): Integer;
+function Fix8901(SrcTblInf: TTableInf; DstPath: string): Integer;
+//function Fix8901SkipScan(SrcTblInf: TTableInf; DstPath: string): Integer;
 var
   BadField, Step, j, i: Integer;
   sExec: string;
@@ -512,16 +513,69 @@ begin
   end;
 end;
 
+// Реккурсивный подбор запроса на хорошие записи
+function FloatQ(iStart: Integer; TName: string; Q: TAdsQuery; iMax: Integer): Integer;
+var
+  Err  : Boolean;
+  iRes : Integer;
+begin
+  // Default - EoF
+  Result := -1;
+  Err := False;
+  Q.SQL.Text := Format('SELECT TOP %d START AT %d * FROM %s', [iMax, iStart, TName]);
+  try
+    Q.Active := True;
+    iRes := Q.RecordCount;
+  except
+    iRes := Max(1, iMax - 1);
+    Err  := True;
+  end;
 
+  if (iRes > 0) then begin
+    if (iRes <> iMax) or (Err = True) then begin
+        // Уменьшаем запрос
+      if (iMax > 1)then begin
+        Q.Close;
+        Q.AdsCloseSQLStatement;
+        Result := FloatQ(iStart, TName, Q, iMax div 2);
+      end
+      else
+        Result := -100;
+
+    end
+    else begin
+      Q.First;
+      Result := iRes;
+    end;
+  end
+
+end;
+
+// Очередной интервал хороших записей или EoF
+function EofQ(iStart: Integer; TName: string; Q: TAdsQuery; var iMax: Integer): Boolean;
+const
+  MAX_RECS: Integer = 50000;
+var
+  iTry: Integer;
+begin
+  Result := False;
+  if ((iStart + MAX_RECS - 1) > iMax) then
+    // Выход за границы таблицы
+    iTry := iMax - iStart + 1
+  else
+    iTry := MAX_RECS;
+  iMax := FloatQ(iStart, TName, Q, iTry);
+  if (iMax = -1) then
+    Result := True;
+end;
 
 
 // Коррктировка таблицы с поврежденными данными (Scan by SQL-Select)
-//function Fix8901SQLScan(SrcTblInf: TTableInf; DstPath: string): Integer;
-function Fix8901(SrcTblInf: TTableInf; DstPath: string): Integer;
+function Fix8901SQLScan(SrcTblInf: TTableInf; DstPath: string): Integer;
+//function Fix8901(SrcTblInf: TTableInf; DstPath: string): Integer;
 var
-  BadField, Step, j, i: Integer;
-  sExec: string;
-  TT: TAdsTable;
+  NoRead: Boolean;
+  iBeg, ij, jMax, BadField, Step, j, i: Integer;
   Q: TAdsQuery;
   BadFInRec: TBadRec;
   BadRecs: TList;
@@ -531,41 +585,69 @@ begin
 
     Q := TAdsQuery.Create(dtmdlADS.cnABTmp.Owner);
     Q.AdsConnection := dtmdlADS.cnABTmp;
+    Q.Active := False;
 
     BadRecs := TList.Create;
-    for i := 1 to SrcTblInf.RecCount do begin
+    NoRead := False;
+    iBeg := 1;
+    jMax := SrcTblInf.RecCount;
 
-      Q.Active := False;
-      Q.SQL.Text := 'SELECT TOP 1 START AT ' + IntToStr(i) + ' * FROM ' + SrcTblInf.TableName;
-      Q.Active := True;
-      if (Q.RecordCount > 0) then begin
+    while not EofQ(iBeg, SrcTblInf.TableName, Q, jMax) do begin
+      if (jMax = -100) then begin
+        jMax := 1;
+        NoRead := True;
+      end;
+
+      for j := 1 to jMax do begin
+        ij := iBeg + j - 1;
 
         try
-          BadField := Read1RecEx(Q.Fields, SrcTblInf.FieldsInf);
+          if (NoRead = True) then
+            BadField := 1
+          else
+            BadField := Read1RecEx(Q.Fields, SrcTblInf.FieldsInf);
           if (BadField >= 0) then begin
             BadFInRec := TBadRec.Create;
-            BadFInRec.RecNo := i;
+            BadFInRec.RecNo := ij;
             BadFInRec.BadFieldI := BadField;
             BadRecs.Add(BadFInRec);
           end
           else
-            SrcTblInf.LastGood := i;
-
+            SrcTblInf.LastGood := ij;
         except
 
         end;
+        if (not NoRead) then
+          Q.Next;
 
       end;
+
       Q.Close;
       Q.AdsCloseSQLStatement;
+
+      iBeg   := iBeg + jMax;
+      NoRead := False;
+      jMax   := SrcTblInf.RecCount;
+
     end;
 
     BuildSpans(BadRecs, SrcTblInf);
 
   finally
-    sExec := '';
   end;
 end;
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -582,9 +664,16 @@ begin
     dtmdlADS.cnABTmp.IsConnected := True;
 
     case SrcTbl.ErrInfo.ErrClass of
-      7008, 7200, 7207:
+      7008, 7207:
         begin
           SrcTbl.RowsFixed := Fix7207(SrcTbl, SrcTbl.FileTmp);
+        end;
+      7200:
+        begin
+          if (SrcTbl.ErrInfo.NativeErr = 7123) then
+            SrcTbl.RowsFixed := Fix8901(SrcTbl, SrcTbl.FileTmp)
+          else
+            SrcTbl.RowsFixed := Fix7207(SrcTbl, SrcTbl.FileTmp);
         end;
       UE_BAD_DATA:
         begin
