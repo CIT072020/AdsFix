@@ -144,6 +144,7 @@ object dtmdlADS: TdtmdlADS
     ParamData = <>
   end
   object qDupGroups: TAdsQuery
+    AdsConnection = cnABTmp
     Left = 368
     Top = 128
     ParamData = <>

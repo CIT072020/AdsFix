@@ -401,6 +401,7 @@ end;
 // Количество записей в таблице (SQL)
 function RecsBySQL(Q: TAdsQuery; TName: string): Integer;
 begin
+  try
   Result := 0;
   Q.Close;
   Q.SQL.Clear;
@@ -410,6 +411,8 @@ begin
     Result := Q.Fields[0].Value;
   Q.Close;
   Q.AdsCloseSQLStatement;
+  except
+  end;
 end;
 
 // тестирование одной таблицы на ошибки

@@ -48,9 +48,13 @@ const
   UE_BAD_FIX  = 9011;
   // Ins не успешный
   UE_BAD_INS  = 9021;
+  // Its impossible
+  UE_SORRY    = 13000;
 
 const
-  EMSG_BAD_DATA : string = 'Некорректные данные!';
+  EMSG_BAD_DATA  : string = 'Некорректные данные!';
+  EMSG_SORRY     : string = 'Восстановление невозможно..Пробуйте AdtFix...';
+  EMSG_TBL_EMPTY : string = 'Таблица пуста!';
 
 const
   CMPNT_NAME = 'tblSrcAds';  

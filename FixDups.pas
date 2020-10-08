@@ -67,6 +67,7 @@ var
 implementation
 
 uses
+  FuncPr,
   FileUtil,
   Math;
 
@@ -349,31 +350,26 @@ end;
   Arguments: Table: string
   Result:    None
 -------------------------------------------------------------------------------}
-function Fix7207(TblInf: TTableInf; DstPath: string): Integer;
+function Fix7207(TblInf: TTableInf; QDupGroups: TAdsQuery): Integer;
 var
+  RowFix,
   j, i: Integer;
   sExec: string;
 begin
-  try
-    Result := 0;
-    with dtmdlADS.qDupGroups do begin
+    RowFix := 0;
+    with QDupGroups do begin
       if Active then
         Close;
-        
-      AdsConnection := dtmdlADS.cnABTmp;
 
       TblInf.DupRows := TList.Create;
 
       for i := 0 to TblInf.IndCount - 1 do begin
           // для всех уникальных индексов таблицы
 
-          // поиск пустых [под]ключей
-        SQL.Clear;
+          // поиск и удаление пустых [под]ключей
         sExec := SQL_7207_SearchEmpty(TblInf, i, 1);
-        SQL.Add(sExec);
-        VerifySQL;
-        j := dtmdlADS.cnABTmp.Execute(sExec);
-        TblInf.RowsFixed := TblInf.RowsFixed + j;
+        j := AdsConnection.Execute(sExec);
+        RowFix := RowFix + j;
 
           // поиск совпадающих ключей
         SQL.Clear;
@@ -386,7 +382,7 @@ begin
 
           // для всех групп с одинаковым значением индекса
           // оставить одну запись из группы
-          LeaveOnlyAllowed(dtmdlADS.qDupGroups, TblInf, i, dtmdlADS.qDst);
+          LeaveOnlyAllowed(QDupGroups, TblInf, i, dtmdlADS.qDst);
 
           DelDups4Idx(TblInf);
         end;
@@ -397,16 +393,10 @@ begin
       end;
 
       // поиск некорректных AUTOINC
-
-
       DelOtherDups(TblInf);
 
     end;
 
-  finally
-    sExec := '';
-
-  end;
 end;
 
 
@@ -454,30 +444,23 @@ end;
 
 
 // Коррктировка таблицы с поврежденными данными (Scan by Skip)
-function Fix8901(SrcTblInf: TTableInf; DstPath: string): Integer;
-//function Fix8901SkipScan(SrcTblInf: TTableInf; DstPath: string): Integer;
+function Fix8901(SrcTblInf: TTableInf; TT: TAdsTable): Integer;
+//function Fix8901SkipScan(SrcTblInf: TTableInf; TT: TAdsTable): Integer;
 var
   BadField, Step, j, i: Integer;
-  sExec: string;
-  TT: TAdsTable;
   BadFInRec: TBadRec;
   BadRecs: TList;
 begin
-  try
     Result := 0;
+{
     if (dtmdlADS.cnABTmp.IsConnected) then
       dtmdlADS.cnABTmp.IsConnected := False;
 
     dtmdlADS.cnABTmp.ConnectPath := AppPars.Path2Tmp;
     dtmdlADS.cnABTmp.IsConnected := True;
-
-    TT := dtmdlADS.tblTmp;
-
-    if (TT.Active = True) then
-      TT.Close;
-    TT.AdsConnection := dtmdlADS.cnABTmp;
+}
     TT.TableName := SrcTblInf.TableName;
-    TT.Active := True;
+    TT.Active    := True;
 
     if (TT.RecordCount > 0) then begin
       BadRecs := TList.Create;
@@ -503,14 +486,12 @@ begin
         TT.AdsSkip(Step);
 
       end;
-    end;
+    end
+    else
+      raise Exception.Create(EMSG_TBL_EMPTY);
     TT.Close;
-    //SrcTblInf.DmgdRIDs := ConvertRecNo2RowID(BadRecs, TT);
     BuildSpans(BadRecs, SrcTblInf);
-
-  finally
-    sExec := '';
-  end;
+    Result := BadRecs.Count;
 end;
 
 // Реккурсивный подбор запроса на хорошие записи
@@ -571,8 +552,8 @@ end;
 
 
 // Коррктировка таблицы с поврежденными данными (Scan by SQL-Select)
-function Fix8901SQLScan(SrcTblInf: TTableInf; DstPath: string): Integer;
-//function Fix8901(SrcTblInf: TTableInf; DstPath: string): Integer;
+function Fix8901SQLScan(SrcTblInf: TTableInf; TT: TAdsTable): Integer;
+//function Fix8901(SrcTblInf: TTableInf; TT: TAdsTable): Integer;
 var
   NoRead: Boolean;
   iBeg, ij, jMax, BadField, Step, j, i: Integer;
@@ -580,11 +561,10 @@ var
   BadFInRec: TBadRec;
   BadRecs: TList;
 begin
-  try
     Result := 0;
 
-    Q := TAdsQuery.Create(dtmdlADS.cnABTmp.Owner);
-    Q.AdsConnection := dtmdlADS.cnABTmp;
+    Q := TAdsQuery.Create(TT.AdsConnection.Owner);
+    Q.AdsConnection := TT.AdsConnection;
     Q.Active := False;
 
     BadRecs := TList.Create;
@@ -594,6 +574,7 @@ begin
 
     while not EofQ(iBeg, SrcTblInf.TableName, Q, jMax) do begin
       if (jMax = -100) then begin
+        // Текущая запись не читается, в ошибочные
         jMax := 1;
         NoRead := True;
       end;
@@ -632,9 +613,7 @@ begin
     end;
 
     BuildSpans(BadRecs, SrcTblInf);
-
-  finally
-  end;
+    Result := BadRecs.Count;
 end;
 
 
@@ -654,30 +633,38 @@ end;
 
 // вызов метода для кода ошибки
 function TblErrorController(SrcTbl: TTableInf): Integer;
+var
+  FixState : Integer;
 begin
   try
-
     if (dtmdlADS.cnABTmp.IsConnected) then
       dtmdlADS.cnABTmp.IsConnected := False;
 
     dtmdlADS.cnABTmp.ConnectPath := AppPars.Path2Tmp;
     dtmdlADS.cnABTmp.IsConnected := True;
 
+    if (dtmdlADS.tblTmp.Active = True) then
+      dtmdlADS.tblTmp.Close;
+    dtmdlADS.tblTmp.AdsConnection := dtmdlADS.cnABTmp;
+
     case SrcTbl.ErrInfo.ErrClass of
       7008, 7207:
         begin
-          SrcTbl.RowsFixed := Fix7207(SrcTbl, SrcTbl.FileTmp);
+            SrcTbl.RowsFixed := Fix7207(SrcTbl, dtmdlADS.qDupGroups);
         end;
       7200:
         begin
-          if (SrcTbl.ErrInfo.NativeErr = 7123) then
-            SrcTbl.RowsFixed := Fix8901(SrcTbl, SrcTbl.FileTmp)
+          if (SrcTbl.ErrInfo.NativeErr = 7123) then begin
+          // неизвестный тип поля
+            PutError(EMSG_SORRY);
+            raise Exception.Create(EMSG_SORRY);
+          end
           else
-            SrcTbl.RowsFixed := Fix7207(SrcTbl, SrcTbl.FileTmp);
+            SrcTbl.RowsFixed := Fix7207(SrcTbl, dtmdlADS.qDupGroups);
         end;
       UE_BAD_DATA:
         begin
-          SrcTbl.RowsFixed := Fix8901(SrcTbl, SrcTbl.FileTmp);
+          SrcTbl.RowsFixed := Fix8901(SrcTbl, dtmdlADS.tblTmp);
         end;
     end;
     SrcTbl.ErrInfo.State := FIX_GOOD;
