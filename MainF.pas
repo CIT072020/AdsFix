@@ -127,6 +127,7 @@ procedure TFormMain.FormDestroy(Sender: TObject);
 var
   Ini: TIniFile;
 begin
+  DelBackUps;
   Ini := TIniFile.Create(ChangeFileExt(Application.ExeName, '.INI'));
   try
     if Length(cbbPath2Src.Text) > 0 then

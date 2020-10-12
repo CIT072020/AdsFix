@@ -790,7 +790,7 @@ end;
 // Вставка в обнуляемый оригинал исправленных записей
 function ChangeOriginal(SrcTbl: TTableInf): Boolean;
 var
-  ecb : Boolean;
+  ecb: Boolean;
   i: Integer;
   FileSrc, FileDst, TmpName, ss, sd: string;
   Span: TSpan;
@@ -804,20 +804,29 @@ begin
   FileDst := AppPars.Path2Tmp + SrcTbl.TableName + '.adt';
   TmpName := AppPars.Path2Src + ORGPFX + SrcTbl.TableName;
 
-  if FileExists(FileSrc + '.adi') then
-    ecb := DeleteFiles(FileSrc + '.adi');
+  if (SrcTbl.NeedBackUp = True) then begin
+    // Перед вставкой сделать копию
+    ecb := DeleteFiles(TmpName + '.*');
 
-  ecb := DeleteFiles(TmpName + '.*');
+    if FileExists(FileSrc + '.adi') then
+      ecb := DeleteFiles(FileSrc + '.adi');
 
-  ss := FileSrc + '.adt';
-  sd := TmpName + '.adt';
-  ecb := RenameFile(ss, sd);
-
-  if FileExists(FileSrc + '.adm') then begin
-    ss := FileSrc + '.adm';
-    sd := TmpName + '.adm';
+    ss := FileSrc + '.adt';
+    sd := TmpName + '.adt';
     ecb := RenameFile(ss, sd);
-  end;
+    if (ecb = True) then
+      SrcTbl.BackUps.Add(sd);
+
+    if FileExists(FileSrc + '.adm') then begin
+      ss := FileSrc + '.adm';
+      sd := TmpName + '.adm';
+      ecb := RenameFile(ss, sd);
+      if (ecb = True) then
+        SrcTbl.BackUps.Add(sd);
+    end;
+  end
+  else  // Удалить таблицу + Memo + index
+    ecb := DeleteFiles(FileSrc + '.ad?');
 
   //--- Auto-create empty table
   SrcTbl.AdsT.AdsConnection.IsConnected := True;
@@ -839,8 +848,7 @@ begin
         for i := 0 to SrcTbl.GoodSpans.Count - 1 do begin
           Span := SrcTbl.GoodSpans[i];
 
-          ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) +
-            ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
+          ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) + ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
           SrcTbl.AdsT.AdsConnection.Execute(ss);
 
         end;
@@ -860,6 +868,7 @@ begin
   end;
 
 end;
+
 
 // Исправить оригинал для отмеченных
 procedure ChangeOriginalAllMarked;
@@ -905,70 +914,37 @@ begin
 
 end;
 
-
-
-
-// Удаление сохраненных оригиналов с ошибками
-function DelOriginalTable(AdsTbl: TTableInf): Boolean;
+// Удаление сохраненных оригиналов с ошибками (BAckups) для одной таблицы
+function DelBUps4OneTable(SrcTbl: TTableInf): integer;
 var
-  ec: Boolean;
-  TmpName : string;
+  i: Integer;
 begin
-  ec := True;
-  TmpName := AppPars.Path2Src + ORGPFX + AdsTbl.TableName;
-
-  if FileExists(TmpName + '.adt') then
-    ec := DeleteFiles(TmpName + '.adt');
-
-  if FileExists(TmpName + '.adm') then
-    ec := DeleteFiles(TmpName + '.adm');
-
-  if FileExists(TmpName + '.adi') then
-    ec := DeleteFiles(TmpName + '.adm');
-
-  Result := ec;
+  Result := 0;
+  for i := 1 to SrcTbl.BackUps.Count do
+    if (DeleteFiles(SrcTbl.BackUps[i - 1]) = True) then
+      Result := Result + 1;
 end;
 
 // Удалить BAckup оригиналов
 procedure DelBackUps;
 var
-  GoodChange: Boolean;
-  i: Integer;
-  SrcTbl: TTableInf;
+  PTblInf : ^TTableInf;
+  TotDel  : Integer;
 begin
+
   with dtmdlADS.mtSrc do begin
     First;
-    i := 0;
+    TotDel := 0;
     while not Eof do begin
-      i := i + 1;
-      if (dtmdlADS.FSrcMark.AsBoolean = True) then begin
-        // для отмеченных
-        SrcTbl := TTableInf(Ptr(dtmdlADS.FSrcFixInf.AsInteger));
-        if (SrcTbl.ErrInfo.FixErr = 0) and (SrcTbl.ErrInfo.FixErr = 0) then begin
-          // исправление было и успешное
-          dtmdlADS.mtSrc.Edit;
-          GoodChange := ChangeOriginal(SrcTbl);
-
-          if (GoodChange = True) then begin
-          // успешно вствлено
-            dtmdlADS.FSrcFixCode.AsInteger := SrcTbl.ErrInfo.InsErr;
-            dtmdlADS.FSrcMark.AsBoolean := False;
-          end
-          else begin
-          // ошибки вставки
-            dtmdlADS.FSrcFixCode.AsInteger := UE_BAD_INS;
-          end;
-
-          dtmdlADS.mtSrc.Post;
-        end;
+      PTblInf := Ptr(dtmdlADS.FSrcFixInf.AsInteger);
+      if Assigned(PTblInf) then begin
+        TotDel := TotDel + DelBUps4OneTable(TTableInf(PTblInf));
       end;
       Next;
     end;
-
   end;
 
 end;
-
 
 // Полный цикл для одной таблицы
 function FullFixOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer; FixPars: TAppPars; Q: TAdsQuery): TTableInf;

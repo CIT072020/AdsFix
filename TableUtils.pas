@@ -52,23 +52,30 @@ type
   private
     FSysPfx   : string;
   public
+    TableName : string;
     // Объект TAdsTable
     AdsT      : TAdsTable;
-    TableName : string;
+
     FileTmp   : string;
+
     // количество записей (теоретически)
     RecCount  : Integer;
     // количество записей (фактически)
     LastGood  : Integer;
     // количество уникальных индексов
     IndCount  : Integer;
-    //
+
+    // описание индексов
     IndexInf  : TList;
     //
     FieldsInf    : TList;
     FieldsInfAds : TACEFieldDefs;
     // поля с типом autoincrement
     FieldsAI  : TStringList;
+
+    NeedBackUp : Boolean;
+    // Список резервных копий
+    BackUps   : TStringList;
 
     ErrInfo  : TErrInfo;
 
@@ -143,8 +150,11 @@ begin
 
   Self.FSysPfx := AnsiPfx;
 
-  ErrInfo   := TErrInfo.Create;
   IndexInf  := TList.Create;
+  BackUps   := TStringList.Create;
+  NeedBackUp := True;
+
+  ErrInfo   := TErrInfo.Create;
   GoodSpans := TList.Create;
 end;
 
