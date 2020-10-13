@@ -928,23 +928,24 @@ end;
 // Удалить BAckup оригиналов
 procedure DelBackUps;
 var
-  PTblInf : ^TTableInf;
-  TotDel  : Integer;
+  PTblInf: ^TTableInf;
+  TotDel: Integer;
 begin
-
-  with dtmdlADS.mtSrc do begin
-    First;
-    TotDel := 0;
-    while not Eof do begin
-      PTblInf := Ptr(dtmdlADS.FSrcFixInf.AsInteger);
-      if Assigned(PTblInf) then begin
-        TotDel := TotDel + DelBUps4OneTable(TTableInf(PTblInf));
+  if (dtmdlADS.mtSrc.Active = True) then
+    with dtmdlADS.mtSrc do begin
+      First;
+      TotDel := 0;
+      while not Eof do begin
+        PTblInf := Ptr(dtmdlADS.FSrcFixInf.AsInteger);
+        if Assigned(PTblInf) then begin
+          TotDel := TotDel + DelBUps4OneTable(TTableInf(PTblInf));
+        end;
+        Next;
       end;
-      Next;
     end;
-  end;
 
 end;
+
 
 // Полный цикл для одной таблицы
 function FullFixOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer; FixPars: TAppPars; Q: TAdsQuery): TTableInf;
