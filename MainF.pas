@@ -248,15 +248,6 @@ begin
 
 end;
 
-
-
-
-
-
-
-
-
-
 // Тестирование всех или только отмеченных
 procedure TestSelected(ModeAll : Boolean);
 var

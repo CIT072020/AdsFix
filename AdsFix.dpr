@@ -1,6 +1,7 @@
 program AdsFix;
 
 uses
+  ExceptionLog,
   Windows,
   Forms,
   AuthF in 'AuthF.pas' {FormAuth},

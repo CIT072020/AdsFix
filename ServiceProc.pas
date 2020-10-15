@@ -41,6 +41,12 @@ const
 
   // мусор в данных
   UE_BAD_DATA = 8901;
+  // недопустимый год
+  UE_BAD_YEAR = 8902;
+  // недопустимый TimeStamp
+  UE_BAD_TMSTMP = 8903;
+  // недопустимый AUTOINC
+  UE_BAD_AINC = 8904;
 
   // копия не получилась
   UE_BAD_PREP = 9001;

@@ -43,8 +43,26 @@ type
     FixErr   : Integer;
     //  од завершени€ INSERT таблицы
     InsErr   : Integer;
-
   end;
+
+type
+  TBadRec = class
+  //info по сбойной записи
+    RecNo     : Integer;
+    BadFieldI : Integer;
+    ErrCode   : Integer;
+    //UseInSpan : Boolean;
+    //InTOP     : Integer;
+    //InSTART   : Integer;
+    //RowID     : string;
+  end;
+
+  TSpan = class
+  //info по интервалу хороших записей
+    InTOP     : Integer;
+    InSTART   : Integer;
+  end;
+
 
 type
   // описание ADS-таблицы дл€ восстановлени€
@@ -83,14 +101,14 @@ type
     List4Del  : String;
 
     DmgdRIDs  : string;
+    // список плохих записей
+    BadRecs   : TList;
     // список интервалов дл€ INSERT
     GoodSpans : TList;
 
     TotalDel  : Integer;
     RowsFixed : Integer;
-    //property Owner : TObject read FOwner write FOwner;
-    //constructor Create(TName : string; AT: TAdsTable; AnsiPfx : string);
-    //constructor Create(TName : string; Conn: TAdsConnection; AnsiPfx : string);
+
     constructor Create(TName : string; TID : Integer; Conn: TAdsConnection; AnsiPfx : string);
     destructor Destroy; override;
 
@@ -102,7 +120,7 @@ type
   end;
 
 procedure Read1Rec(Rec: TFields);
-function Read1RecEx(Rec: TFields; FInf: TList): Integer;
+function Read1RecEx(Fields: TFields; FInf: TList) : TBadRec;
 
 implementation
 
@@ -155,6 +173,7 @@ begin
   NeedBackUp := True;
 
   ErrInfo   := TErrInfo.Create;
+  BadRecs   := TList.Create;
   GoodSpans := TList.Create;
 end;
 
@@ -327,8 +346,10 @@ begin
   end;
 end;
 
+
+
 // „тение всех полей записи с обработкой ошибок
-function Read1RecEx(Rec: TFields; FInf: TList): Integer;
+function Read1RecEx(Fields: TFields; FInf: TList) : TBadRec;
 var
   Ms, j: Integer;
   v: Variant;
@@ -336,35 +357,48 @@ var
   ts: TTimeStamp;
   Year: Word;
   FI: TFieldsInf;
+  BadFInRec: TBadRec;
 begin
-  Result := -1;
-  for j := 0 to Rec.Count - 1 do begin
+  Result := nil;
+  for j := 0 to Fields.Count - 1 do begin
     try
-      v := Rec[j].Value;
-      if (Length(Rec[j].DisplayText) > 0) then begin
+      v := Fields[j].Value;
+      if (Length(Fields[j].DisplayText) > 0) then begin
       // Ќе пусто или не NULL
         FI := TFieldsInf(FInf[j]);
         if (FI.FieldType in ADS_DATES) then begin
           t := v;
           Year := YearOf(t);
           if (Year <= 1) or (Year > 2100) then
-            raise Exception.Create(EMSG_BAD_DATA);
+            //raise Exception.Create(EMSG_BAD_DATA);
+            raise EADSDatabaseError.create(nil, UE_BAD_YEAR, '');
           if (FI.FieldType = ADS_TIMESTAMP) then begin
             Ms := (DateTimeToTimeStamp(t)).Time;
             if (Ms < 0) or (Ms > MSEC_PER_DAY) then
-              raise Exception.Create(EMSG_BAD_DATA);
+              //raise Exception.Create(EMSG_BAD_DATA);
+              raise EADSDatabaseError.create(nil, UE_BAD_TMSTMP, '');
           end
         end
         else if (FI.FieldType = ADS_AUTOINC) then begin
           Ms := v;
           if (Ms < 0) then
-              raise Exception.Create(EMSG_BAD_DATA);
+              //raise Exception.Create(EMSG_BAD_DATA);
+              raise EADSDatabaseError.create(nil, UE_BAD_AINC, '');
         end;
       end;
 
     except
-      Result := j;
+    // ќписание ошибочной записи
+    on E: Exception do begin
+      if (E is EADSDatabaseError) then
+        Ms := EADSDatabaseError(E).ACEErrorCode
+      else
+        Ms := UE_BAD_DATA;
+      Result := TBadRec.Create;
+      Result.BadFieldI := j;
+      Result.ErrCode := Ms;
       Break;
+    end
     end;
   end;
 
@@ -377,10 +411,10 @@ var
 begin
   if (AdsTbl.RecordCount > 0) then begin
     AdsTbl.First;
-    if (Read1RecEx(AdsTbl.Fields, FInf) >= 0) then
+    if ( Assigned(Read1RecEx(AdsTbl.Fields, FInf)) ) then
       raise EADSDatabaseError.create(AdsTbl, UE_BAD_DATA, EMSG_BAD_DATA);
     AdsTbl.Last;
-    if (Read1RecEx(AdsTbl.Fields, FInf) >= 0) then
+    if ( Assigned(Read1RecEx(AdsTbl.Fields, FInf)) ) then
       raise EADSDatabaseError.create(AdsTbl, UE_BAD_DATA, EMSG_BAD_DATA);
 
     if (Check = Simple) then
@@ -400,7 +434,7 @@ begin
 
     while (not AdsTbl.Eof) do begin
       AdsTbl.AdsSkip(Step);
-      if (Read1RecEx(AdsTbl.Fields, FInf) >= 0) then
+      if ( Assigned(Read1RecEx(AdsTbl.Fields, FInf)) ) then
         raise EADSDatabaseError.create(AdsTbl, UE_BAD_DATA, EMSG_BAD_DATA);
     end;
 
@@ -412,18 +446,19 @@ end;
 function RecsBySQL(Q: TAdsQuery; TName: string): Integer;
 begin
   try
-  Result := 0;
-  Q.Close;
-  Q.SQL.Clear;
-  Q.SQL.Text := 'SELECT COUNT(*) FROM ' + TName;
-  Q.Active := True;
-  if (Q.RecordCount > 0) then
-    Result := Q.Fields[0].Value;
-  Q.Close;
-  Q.AdsCloseSQLStatement;
+    Result := 0;
+    Q.Close;
+    Q.SQL.Clear;
+    Q.SQL.Text := 'SELECT COUNT(*) FROM ' + TName;
+    Q.Active := True;
+    if (Q.RecordCount > 0) then
+      Result := Q.Fields[0].Value;
+    Q.Close;
+    Q.AdsCloseSQLStatement;
   except
   end;
 end;
+
 
 // тестирование одной таблицы на ошибки
 function TTableInf.Test1Table(AdsTI : TTableInf; QWork : TAdsQuery; Check: TestMode): Integer;
