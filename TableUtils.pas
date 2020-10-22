@@ -87,7 +87,7 @@ type
     IndexInf  : TList;
     //
     FieldsInf    : TList;
-    FieldsInfAds : TACEFieldDefs;
+    //FieldsInfAds : TACEFieldDefs;
     // поля с типом autoincrement
     FieldsAI  : TStringList;
 
@@ -131,7 +131,7 @@ uses
   Math,
   DBFunc;
 
-
+// Поиск среди компонентов существующего с заданным именем
 function TableExists(Owner : TComponent; CName : string) : TAdsTable;
 var
   i : Integer;
@@ -168,8 +168,11 @@ begin
 
   Self.FSysPfx := AnsiPfx;
 
-  IndexInf  := TList.Create;
-  BackUps   := TStringList.Create;
+  FieldsInf  := TList.Create;
+  FieldsAI   := TStringList.Create;
+  IndexInf   := TList.Create;
+  BackUps    := TStringList.Create;
+  
   NeedBackUp := True;
 
   ErrInfo   := TErrInfo.Create;
@@ -184,51 +187,31 @@ begin
   inherited Destroy;
 end;
 
-
 // сведения о полях одной таблицы (SQL)
 procedure TTableInf.FieldsInfo;
 var
-  i: Integer;
-  s: string;
   Q : TAdsQuery;
-  UFlds: TFieldsInf;
-  ACEField: TACEFieldDef;
+  OneField: TFieldsInf;
 begin
-  FieldsInf := TList.Create;
-  FieldsAI := TStringList.Create;
-
-  FieldsInfAds := TACEFieldDefs.Create(AdsT.Owner);
   Q := TAdsQuery.Create(AdsT.Owner);
   Q.AdsConnection := AdsT.AdsConnection;
 
   with Q do begin
-
-    Active := False;
-    SQL.Clear;
-    s := 'SELECT * FROM ' + FSysPfx + 'COLUMNS WHERE PARENT=''' + TableName + '''';
-    SQL.Add(s);
+    SQL.Add( Format('SELECT * FROM %sCOLUMNS WHERE PARENT=''%s''' , [FSysPfx, TableName]) );
     Active := True;
 
     First;
     while not Eof do begin
-      UFlds := TFieldsInf.Create;
-      UFlds.Name := FieldByName('Name').AsString;
-      UFlds.FieldType := FieldByName('Field_Type').AsInteger;
-      UFlds.TypeSQL   := ArrSootv[UFlds.FieldType].Name;
-      if (UFlds.FieldType = ADS_AUTOINC) then
-        FieldsAI.Add(UFlds.Name);
-
-      FieldsInf.Add(UFlds);
-
-      ACEField := FieldsInfAds.Add;
-      ACEField.FieldName := FieldByName('Name').AsString;
-      ACEField.FieldType := FieldByName('Field_Type').AsInteger;
-
+      OneField := TFieldsInf.Create;
+      OneField.Name      := FieldByName('Name').AsString;
+      OneField.FieldType := FieldByName('Field_Type').AsInteger;
+      OneField.TypeSQL   := ArrSootv[OneField.FieldType].Name;
+      if (OneField.FieldType = ADS_AUTOINC) then
+        FieldsAI.Add(OneField.Name);
+      FieldsInf.Add(OneField);
       Next;
     end;
-
   end;
-
 end;
 
 // Убрать из выражения индекса направления сортировки
@@ -257,7 +240,7 @@ var
 label
   QFor;
 begin
-  SrcTbl.IndexInf := TList.Create;
+  //SrcTbl.IndexInf := TList.Create;
   with QWork do begin
     if Active then
       Close;
@@ -292,8 +275,8 @@ begin
         CommaList := CommaList + Uind.Fields[j];
         UInd.AlsCommaSet := UInd.AlsCommaSet + AL_SRC + '.' + Uind.Fields[j];
         UInd.EquSet := UInd.EquSet + '(' + AL_SRC + '.' + Uind.Fields[j] + '=' + AL_DUP + '.' + Uind.Fields[j] + ')';
-        for i := 0 to SrcTbl.FieldsInfAds.Count - 1 do
-          if (SrcTbl.FieldsInfAds[i].FieldName = UInd.Fields[j]) then begin
+        for i := 0 to SrcTbl.FieldsInf.Count - 1 do
+          if (TFieldsInf(SrcTbl.FieldsInf[i]).Name = UInd.Fields[j]) then begin
             UInd.IndFieldsAdr[j] := i;
             goto QFor;
           end;
@@ -323,7 +306,7 @@ begin
 
     for j := 0 to IndInf.Fields.Count - 1 do begin
       k := IndInf.IndFieldsAdr[j];
-      t := AdsTI.FieldsInfAds[k].FieldType;
+      t := TFieldsInf(AdsTI.FieldsInf[k]).FieldType;
       if (t in [ADS_LOGICAL, ADS_INTEGER, ADS_SHORTINT, ADS_AUTOINC])
         or (t in ADS_DATES)
         or (t in ADS_BIN) then begin
@@ -341,11 +324,9 @@ var
   j: Integer;
   v: Variant;
 begin
-  for j := 0 to Rec.Count - 1 do begin
+  for j := 0 to Rec.Count - 1 do
     v := Rec[j].Value;
-  end;
 end;
-
 
 
 // Чтение всех полей записи с обработкой ошибок
@@ -496,11 +477,10 @@ begin
         // есть уникальные индексы
             iFld := Field4Alter(AdsTI);
             if (iFld >= 0) then begin
-              s := AdsTI.FieldsInfAds[iFld].FieldName;
-              TypeName := ArrSootv[AdsTI.FieldsInfAds[iFld].FieldType].Name;
-              s := 'ALTER TABLE ' + AdsTI.TableName + ' ALTER COLUMN ' + s + ' ' + s + ' ' + TypeName;
+              s := TFieldsInf(AdsTI.FieldsInf[iFld]).Name;
+              s := 'ALTER TABLE ' + AdsTI.TableName + ' ALTER COLUMN ' + s + ' ' + s + ' ' + TFieldsInf(AdsTI.FieldsInf[iFld]).TypeSQL;
               Conn.Execute(s);
-              s := AppPars.Path2Src + AdsTI.TableName + '*.BAK';
+              s := IncludeTrailingPathDelimiter(Conn.GetConnectionPath) + AdsTI.TableName + '*.BAK';
               DeleteFiles(s);
             end;
           end;

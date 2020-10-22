@@ -176,13 +176,11 @@ begin
   RowWeight := 0;
   Q1F.Active := False;
 
-  for i := 0 to AdsTbl.FieldsInfAds.Count - 1 do begin
-
+  for i := 0 to AdsTbl.FieldsInf.Count - 1 do begin
     if (i > 1) then
       s := s + ' OR ';
-
-    sField := AdsTbl.FieldsInfAds[i].FieldName;
-    FT := AdsTbl.FieldsInfAds[i].FieldType;
+    sField := TFieldsInf(AdsTbl.FieldsInf[i]).Name;
+    FT := TFieldsInf(AdsTbl.FieldsInf[i]).FieldType;
     sEmpCond := EmptyFCond(sField, FT, True);
     s := 'SELECT ' + sField + ' FROM ' + AdsTbl.TableName + s4All + sEmpCond;
     Q1F.SQL.Clear;
@@ -301,23 +299,19 @@ end;
 
 function SQL_7207_SearchEmpty(TblInf : TTableInf; iI : Integer; nMode : Integer) : string;
 var
-  i, j, t,
-  iMax : Integer;
+  i, j : Integer;
   s : String;
   IndInf : TIndexInf;
 begin
-  iMax := TblInf.IndCount;
   Result := 'DELETE FROM ' + TblInf.TableName + ' WHERE ' + TblInf.TableName + '.ROWID IN ';
   s := '(SELECT ROWID FROM ' + TblInf.TableName + ' WHERE ';
   IndInf := TblInf.IndexInf.Items[iI];
 
-  iMax := IndInf.Fields.Count - 1;
-  for i := 0 to iMax do begin
+  for i := 0 to IndInf.Fields.Count - 1 do begin
     if (i > 1) then
       s := s + ' OR ';
     j := IndInf.IndFieldsAdr[i];
-    t := TblInf.FieldsInfAds[j].FieldType;
-    s := s + EmptyFCond(IndInf.Fields.Strings[i], t);
+    s := s + EmptyFCond(IndInf.Fields.Strings[i], TFieldsInf(TblInf.FieldsInf[j]).FieldType);
   end;
   Result := Result + s + ')';
 end;
