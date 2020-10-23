@@ -272,7 +272,7 @@ begin
           TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.conAdsBase, dtmdlADS.SYSTEM_ALIAS);
           dtmdlADS.FSrcFixInf.AsInteger := Integer(TableInf);
 
-          ec := TableInf.Test1Table(TableInf, dtmdlADS.qAny, AppPars.TMode);
+          ec := TableInf.Test1Table(TableInf, AppPars.TMode);
           dtmdlADS.FSrcAIncs.AsInteger := TableInf.FieldsAI.Count;
           dtmdlADS.FSrcTestCode.AsInteger := ec;
           if (ec > 0) then begin

@@ -10,7 +10,8 @@ uses
   ServiceProc in 'ServiceProc.pas',
   FixDups in 'FixDups.pas',
   MainF in 'MainF.pas' {FormMain},
-  TableUtils in 'TableUtils.pas';
+  TableUtils in 'TableUtils.pas',
+  FixTypes in 'FixTypes.pas';
 
 {$R *.res}
 

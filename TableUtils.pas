@@ -66,11 +66,15 @@ type
 
 type
   // описание ADS-таблицы для восстановления
-  TTableInf = class
+  TTableInf = class(TInterfacedObject)
   private
     FSysPfx   : string;
+    procedure FieldsInfo(Q : TAdsQuery);
+    procedure IndexesInf(SrcTbl: TTableInf; QWork : TAdsQuery);
   public
     TableName : string;
+    // Путь к словарю
+    Path2Src  : string;
     // Объект TAdsTable
     AdsT      : TAdsTable;
 
@@ -87,7 +91,6 @@ type
     IndexInf  : TList;
     //
     FieldsInf    : TList;
-    //FieldsInfAds : TACEFieldDefs;
     // поля с типом autoincrement
     FieldsAI  : TStringList;
 
@@ -112,11 +115,7 @@ type
     constructor Create(TName : string; TID : Integer; Conn: TAdsConnection; AnsiPfx : string);
     destructor Destroy; override;
 
-    //class procedure FieldsInfBySQL(AdsTbl: TTableInf; QWork : TAdsQuery);
-    procedure FieldsInfo;
-
-    procedure IndexesInf(SrcTbl: TTableInf; QWork : TAdsQuery);
-    function Test1Table(AdsTI : TTableInf; QWork : TAdsQuery; Check: TestMode): Integer;
+    function Test1Table(AdsTI : TTableInf; Check: TestMode): Integer;
   end;
 
 procedure Read1Rec(Rec: TFields);
@@ -153,8 +152,10 @@ var
 begin
   inherited Create;
 
-  cName := CMPNT_NAME + IntToStr(TID);
   Self.TableName := TName;
+  Self.Path2Src  := IncludeTrailingPathDelimiter(Conn.GetConnectionPath);
+
+  cName := CMPNT_NAME + IntToStr(TID);
   T := TableExists(Conn.Owner, cName);
   if ( not Assigned(T) ) then begin
     Self.AdsT := TAdsTable.Create(Conn.Owner);
@@ -188,18 +189,13 @@ begin
 end;
 
 // сведения о полях одной таблицы (SQL)
-procedure TTableInf.FieldsInfo;
+procedure TTableInf.FieldsInfo(Q : TAdsQuery);
 var
-  Q : TAdsQuery;
   OneField: TFieldsInf;
 begin
-  Q := TAdsQuery.Create(AdsT.Owner);
-  Q.AdsConnection := AdsT.AdsConnection;
-
   with Q do begin
     SQL.Add( Format('SELECT * FROM %sCOLUMNS WHERE PARENT=''%s''' , [FSysPfx, TableName]) );
     Active := True;
-
     First;
     while not Eof do begin
       OneField := TFieldsInf.Create;
@@ -211,6 +207,9 @@ begin
       FieldsInf.Add(OneField);
       Next;
     end;
+    Close;
+    AdsCloseSQLStatement;
+    AdsConnection.CloseCachedTables;
   end;
 end;
 
@@ -236,11 +235,10 @@ procedure TTableInf.IndexesInf(SrcTbl: TTableInf; QWork : TAdsQuery);
 var
   i, j: Integer;
   CommaList: string;
-  UInd : TIndexInf;
+  OneInd : TIndexInf;
 label
   QFor;
 begin
-  //SrcTbl.IndexInf := TList.Create;
   with QWork do begin
     if Active then
       Close;
@@ -252,42 +250,44 @@ begin
     SrcTbl.IndCount := RecordCount;
     First;
     while not Eof do begin
-      UInd := TIndexInf.Create;
-      UInd.Options := FieldByName('INDEX_OPTIONS').AsInteger;
-      //UInd.Expr := FieldByName('INDEX_EXPRESSION').AsInteger;
-      UInd.Fields := TStringList.Create;
-      UInd.Fields.Delimiter := ';';
-      UInd.Fields.DelimitedText := FieldByName('INDEX_EXPRESSION').AsString;
-      ClearFieldInExp(UInd.Fields);
+      OneInd := TIndexInf.Create;
+      OneInd.Options := FieldByName('INDEX_OPTIONS').AsInteger;
+      //OneInd.Expr := FieldByName('INDEX_EXPRESSION').AsInteger;
+      OneInd.Fields := TStringList.Create;
+      OneInd.Fields.Delimiter := ';';
+      OneInd.Fields.DelimitedText := FieldByName('INDEX_EXPRESSION').AsString;
+      ClearFieldInExp(OneInd.Fields);
 
-      SetLength(UInd.IndFieldsAdr, UInd.Fields.Count);
+      SetLength(OneInd.IndFieldsAdr, OneInd.Fields.Count);
 
       CommaList := '';
-      UInd.AlsCommaSet := '';
-      UInd.EquSet := '';
-      for j := 0 to UInd.Fields.Count - 1 do begin
+      OneInd.AlsCommaSet := '';
+      OneInd.EquSet := '';
+      for j := 0 to OneInd.Fields.Count - 1 do begin
         if (j > 0) then begin
           CommaList := CommaList + ',';
-          UInd.AlsCommaSet := UInd.AlsCommaSet + ',';
-          UInd.EquSet := UInd.EquSet + ' AND ';
+          OneInd.AlsCommaSet := OneInd.AlsCommaSet + ',';
+          OneInd.EquSet := OneInd.EquSet + ' AND ';
         end;
 
-        CommaList := CommaList + Uind.Fields[j];
-        UInd.AlsCommaSet := UInd.AlsCommaSet + AL_SRC + '.' + Uind.Fields[j];
-        UInd.EquSet := UInd.EquSet + '(' + AL_SRC + '.' + Uind.Fields[j] + '=' + AL_DUP + '.' + Uind.Fields[j] + ')';
+        CommaList := CommaList + OneInd.Fields[j];
+        OneInd.AlsCommaSet := OneInd.AlsCommaSet + AL_SRC + '.' + OneInd.Fields[j];
+        OneInd.EquSet := OneInd.EquSet + '(' + AL_SRC + '.' + OneInd.Fields[j] + '=' + AL_DUP + '.' + OneInd.Fields[j] + ')';
         for i := 0 to SrcTbl.FieldsInf.Count - 1 do
-          if (TFieldsInf(SrcTbl.FieldsInf[i]).Name = UInd.Fields[j]) then begin
-            UInd.IndFieldsAdr[j] := i;
+          if (TFieldsInf(SrcTbl.FieldsInf[i]).Name = OneInd.Fields[j]) then begin
+            OneInd.IndFieldsAdr[j] := i;
             goto QFor;
           end;
       end;
 QFor:
-      UInd.CommaSet := CommaList;
+      OneInd.CommaSet := CommaList;
 
-      SrcTbl.IndexInf.Add(UInd);
+      SrcTbl.IndexInf.Add(OneInd);
       Next;
     end;
-
+    Close;
+    AdsCloseSQLStatement;
+    AdsConnection.CloseCachedTables;
   end;
 
 end;
@@ -436,27 +436,32 @@ begin
       Result := Q.Fields[0].Value;
     Q.Close;
     Q.AdsCloseSQLStatement;
+    Q.AdsConnection.CloseCachedTables;
   except
   end;
 end;
 
 
 // тестирование одной таблицы на ошибки
-function TTableInf.Test1Table(AdsTI : TTableInf; QWork : TAdsQuery; Check: TestMode): Integer;
+function TTableInf.Test1Table(AdsTI : TTableInf; Check: TestMode): Integer;
 var
   iFld, ec: Integer;
   TypeName, s: string;
   ErrInf: TStringList;
   AdsFT: UNSIGNED16;
   Conn : TAdsConnection;
+  QWork : TAdsQuery;
 begin
   Result := 0;
   if (AdsTI.AdsT.Active) then
     AdsTI.AdsT.Close;
 
   try
-    Conn := QWork.AdsConnection;
-    FieldsInfo;
+    Conn := AdsTI.AdsT.AdsConnection;
+    QWork := TAdsQuery.Create(AdsTI.AdsT.Owner);
+    QWork.AdsConnection := Conn;
+
+    FieldsInfo(QWork);
     IndexesInf(AdsTI, QWork);
     AdsTI.RecCount := RecsBySQL(QWork, AdsTI.TableName);
     AdsTI.ErrInfo.State := TST_UNKNOWN;

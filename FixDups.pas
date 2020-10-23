@@ -6,11 +6,10 @@ uses
   SysUtils, Classes, adsset, adscnnct, DB, adsdata, adsfunc, adstable, ace,
   kbmMemTable,
   //EncdDecd,
+  FixTypes,
   ServiceProc, AdsDAO, TableUtils;
 
 const
-  // модификатор имени файла при создании backup
-  ORGPFX : string = 'tmp_';
 
   // Эмпирические веса заполненных полей в соответственно типу
   FWT_BOOL : Integer = 1;
@@ -583,8 +582,8 @@ end;
 
 
 
-// AutoInc => Integer
-function ChangeAI2Int(SrcTbl: TTableInf): Boolean;
+// AutoInc => Integer and reverse
+function ChangeAI(SrcTbl: TTableInf; AIType : string; Conn : TAdsConnection; DelExt : string = ''): Boolean;
 var
   i: Integer;
   s: string;
@@ -594,9 +593,11 @@ begin
     if (SrcTbl.FieldsAI.Count > 0) then begin
       s := 'ALTER TABLE ' + SrcTbl.TableName;
       for i := 0 to (SrcTbl.FieldsAI.Count - 1) do begin
-        s := s + ' ALTER COLUMN ' + SrcTbl.FieldsAI[i] + ' ' + SrcTbl.FieldsAI[i] + ' INTEGER';
+        s := s + ' ALTER COLUMN ' + SrcTbl.FieldsAI[i] + ' ' + SrcTbl.FieldsAI[i] + AIType;
       end;
-      SrcTbl.AdsT.AdsConnection.Execute(s);
+      Conn.Execute(s);
+      if (Length(DelExt) > 0) then
+        DeleteFiles(IncludeTrailingPathDelimiter(Conn.GetConnectionPath) + SrcTbl.TableName + DelExt);
     end;
   except
     Result := False;
@@ -604,6 +605,7 @@ begin
 end;
 
 // Integer => AutoInc
+{
 function ChangeInt2AI(SrcTbl: TTableInf): Boolean;
 var
   ec : Boolean;
@@ -618,13 +620,13 @@ begin
         s := s + ' ALTER COLUMN ' + SrcTbl.FieldsAI[i] + ' ' + SrcTbl.FieldsAI[i] + ' AUTOINC';
       end;
       SrcTbl.AdsT.AdsConnection.Execute(s);
-      ec := DeleteFiles(AppPars.Path2Src + SrcTbl.TableName + '.ad?.bak');
     end;
   except
     Result := False;
   end;
 
 end;
+}
 
 
 // Вставка в обнуляемый оригинал исправленных записей
@@ -634,11 +636,13 @@ var
   i: Integer;
   FileSrc, FileDst, TmpName, ss, sd: string;
   Span: TSpan;
+  Conn : TAdsConnection;
 begin
   Result := False;
 
   SrcTbl.AdsT.Active := False;
-  SrcTbl.AdsT.AdsConnection.Disconnect;
+  Conn := SrcTbl.AdsT.AdsConnection;
+  Conn.Disconnect;
 
   FileSrc := AppPars.Path2Src + SrcTbl.TableName;
   FileDst := AppPars.Path2Tmp + SrcTbl.TableName + '.adt';
@@ -678,23 +682,23 @@ begin
   //---
 
   try
-    if (ChangeAI2Int(SrcTbl) = True) then begin
+    if (ChangeAI(SrcTbl, ' INTEGER', Conn) = True) then begin
       if (SrcTbl.GoodSpans.Count <= 0) then begin
         // Загрузка оптом
         ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT * FROM "' + FileDst + '" SRC';
         if (Length(SrcTbl.DmgdRIDs) > 0) then
           ss := ss + ' WHERE SRC.ROWID NOT IN (' + SrcTbl.DmgdRIDs + ')';
-        SrcTbl.AdsT.AdsConnection.Execute(ss);
+        Conn.Execute(ss);
       end
       else begin
         // Загрузка интервалами хороших записей
         for i := 0 to SrcTbl.GoodSpans.Count - 1 do begin
           Span := SrcTbl.GoodSpans[i];
           ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) + ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
-          SrcTbl.AdsT.AdsConnection.Execute(ss);
+          Conn.Execute(ss);
         end;
       end;
-      ChangeInt2AI(SrcTbl);
+      ChangeAI(SrcTbl, ' AUTOINC', Conn, '.ad?.bak');
     end;
     SrcTbl.ErrInfo.State := INS_GOOD;
     SrcTbl.ErrInfo.InsErr := 0;
@@ -716,6 +720,7 @@ var
   GoodChange: Boolean;
   i: Integer;
   SrcTbl: TTableInf;
+  DAds  : TDictAds;
 begin
   with dtmdlADS.mtSrc do begin
     First;
@@ -731,8 +736,8 @@ begin
           if (SrcTbl.ErrInfo.State = FIX_GOOD) then begin
 
             dtmdlADS.mtSrc.Edit;
-
             GoodChange := ChangeOriginal(SrcTbl);
+            //GoodChange := DAds.ChangeOriginal;
             if (GoodChange = True) then begin
           // успешно вствлено
               dtmdlADS.FSrcMark.AsBoolean := False;
@@ -749,6 +754,7 @@ begin
       end;
       Next;
     end;
+    First;
     dtmdlADS.conAdsBase.Disconnect;
   end;
 
@@ -790,13 +796,14 @@ end;
 // Полный цикл для одной таблицы
 function FullFixOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer; FixPars: TAppPars; Q: TAdsQuery): TTableInf;
 var
+  RowsFixed,
   ec, i: Integer;
   SrcTbl: TTableInf;
 begin
 
   if (Ptr2TableInf = 0) then begin
     SrcTbl := TTableInf.Create(TName, TID, Q.AdsConnection, FixPars.SysAdsPfx);
-    ec := SrcTbl.Test1Table(SrcTbl, Q, FixPars.TMode);
+    ec := SrcTbl.Test1Table(SrcTbl, FixPars.TMode);
   end
   else begin
     SrcTbl := TTableInf(Ptr(Ptr2TableInf));
@@ -806,10 +813,10 @@ begin
 
   if (ec > 0) then begin
     // Ошибки тестирования были
-    SrcTbl.ErrInfo.PrepErr := PrepTable(SrcTbl);
-    if (SrcTbl.ErrInfo.PrepErr = 0) then begin
+    ec := PrepTable(SrcTbl);
+    if (ec = 0) then begin
       // Исправление копии
-      SrcTbl.ErrInfo.FixErr := TblErrorController(SrcTbl);
+      RowsFixed := TblErrorController(SrcTbl);
       if (SrcTbl.ErrInfo.FixErr = 0) then begin
         // Исправление оригинала
         if (ChangeOriginal(SrcTbl) = True) then

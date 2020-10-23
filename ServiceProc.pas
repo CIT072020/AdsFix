@@ -63,7 +63,10 @@ const
   EMSG_TBL_EMPTY : string = 'Таблица пуста!';
 
 const
-  CMPNT_NAME = 'tblSrcAds';  
+  // модификатор имени файла при создании backup
+  ORGPFX : string = 'tmp_';
+  
+  CMPNT_NAME = 'tblSrcAds';
 
 const
   // Выборочных чтений таблицы при среднем уровне тестирования
