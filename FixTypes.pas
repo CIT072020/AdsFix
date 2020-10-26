@@ -24,7 +24,7 @@ type
     function ChangeOriginal : Boolean;
   end;
 
-  TDictAds = class(TTableInf, IFixErrs)
+  TTblDict = class(TTableInf, IFixErrs)
   public
     function ChangeOriginal : Boolean;
   end;
@@ -36,7 +36,7 @@ uses
   FileUtil;
 
 // AutoInc => Integer and reverse
-function ChangeAI(SrcTbl: TTableInf; AIType : string; Conn : TAdsConnection; DelExt : string = ''): Boolean;
+function ChangeAI(SrcTbl: TTableInf; AorIType : string; Conn : TAdsConnection; DelExt : string = ''): Boolean;
 var
   i: Integer;
   s: string;
@@ -46,7 +46,7 @@ begin
     if (SrcTbl.FieldsAI.Count > 0) then begin
       s := 'ALTER TABLE ' + SrcTbl.TableName;
       for i := 0 to (SrcTbl.FieldsAI.Count - 1) do begin
-        s := s + ' ALTER COLUMN ' + SrcTbl.FieldsAI[i] + ' ' + SrcTbl.FieldsAI[i] + AIType;
+        s := s + ' ALTER COLUMN ' + SrcTbl.FieldsAI[i] + ' ' + SrcTbl.FieldsAI[i] + AorIType;
       end;
       Conn.Execute(s);
       if (Length(DelExt) > 0) then
@@ -58,7 +58,7 @@ begin
 end;
 
 // Вставка в обнуляемый оригинал исправленных записей
-function TDictAds.ChangeOriginal : Boolean;
+function TTblDict.ChangeOriginal : Boolean;
 var
   ecb: Boolean;
   i: Integer;

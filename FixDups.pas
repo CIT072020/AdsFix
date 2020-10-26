@@ -720,7 +720,7 @@ var
   GoodChange: Boolean;
   i: Integer;
   SrcTbl: TTableInf;
-  DAds  : TDictAds;
+  DAds  : TTblDict;
 begin
   with dtmdlADS.mtSrc do begin
     First;
