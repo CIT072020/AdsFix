@@ -18,18 +18,6 @@ const
   FWT_STR  : Integer = 30;
   FWT_BIN  : Integer = 5;
 
-type
-  TFixBase = class(TObject)
-  private
-    FPars : TAppPars;
-  protected
-  public
-    property FixPars : TAppPars read FPars write FPars;
-
-    constructor Create(FixBasePars: TAppPars);
-    destructor Destroy; override;
-  published
-  end;
 
 procedure FixAllMarked;
 // Исправить оригинал для отмеченных
@@ -50,18 +38,6 @@ uses
   FileUtil,
   Math;
 
-constructor TFixBase.Create(FixBasePars : TAppPars);
-begin
-  inherited Create;
-  FixPars := FixBasePars;
-end;
-
-
-destructor TFixBase.Destroy;
-begin
-  inherited Destroy;
-
-end;
 
 function CopyOneFile(const Src, Dst: string): Integer;
 begin

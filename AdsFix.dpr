@@ -11,7 +11,8 @@ uses
   FixDups in 'FixDups.pas',
   MainF in 'MainF.pas' {FormMain},
   TableUtils in 'TableUtils.pas',
-  FixTypes in 'FixTypes.pas';
+  FixTypes in 'FixTypes.pas',
+  FixObject in 'FixObject.pas';
 
 {$R *.res}
 

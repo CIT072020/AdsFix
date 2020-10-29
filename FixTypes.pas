@@ -12,7 +12,7 @@ uses
   //adsfunc,
   //adstable,
   //ace,
-  //kbmMemTable,
+  kbmMemTable,
   //EncdDecd,
   //ServiceProc, AdsDAO, TableUtils;
   ServiceProc,
@@ -29,11 +29,54 @@ type
     function ChangeOriginal : Boolean;
   end;
 
+type
+  TFixBase = class(TObject)
+  private
+    FPars : TAppPars;
+    FTblList : TkbmMemTable;
+  protected
+  public
+    property FixPars : TAppPars read FPars write FPars;
+    property FixList : TkbmMemTable read FTblList write FTblList;
+
+    constructor Create(FixBasePars: TAppPars);
+    destructor Destroy; override;
+  published
+  end;
 
 implementation
 
 uses
   FileUtil;
+
+constructor TFixBase.Create(FixBasePars : TAppPars);
+begin
+  inherited Create;
+  FixPars := FixBasePars;
+end;
+
+
+destructor TFixBase.Destroy;
+begin
+  inherited Destroy;
+
+end;
+
+
+// Проверить и исправить все
+{
+procedure TFixBase.FullFix(Src: string);
+begin
+  if (List4Fix(Src) = 0) then begin
+    TestSelected(True);
+    FullFixAllMarked(False);
+  end
+  else
+  PutError('Таблицы не найдены!');
+
+end;
+}
+
 
 // AutoInc => Integer and reverse
 function ChangeAI(SrcTbl: TTableInf; AorIType : string; Conn : TAdsConnection; DelExt : string = ''): Boolean;
