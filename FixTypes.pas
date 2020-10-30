@@ -14,9 +14,7 @@ uses
   //ace,
   kbmMemTable,
   //EncdDecd,
-  //ServiceProc, AdsDAO, TableUtils;
-  ServiceProc,
-  TableUtils;
+  ServiceProc, AdsDAO, TableUtils;
 
 type
   IFixErrs = Interface
@@ -33,16 +31,20 @@ type
   TFixBase = class(TObject)
   private
     FPars : TAppPars;
-    FTblList : TkbmMemTable;
+    FTblList : TAdsList;
   protected
   public
     property FixPars : TAppPars read FPars write FPars;
-    property FixList : TkbmMemTable read FTblList write FTblList;
+    property FixList : TAdsList read FTblList write FTblList;
 
+    function CreateFixList : TAdsList;
     constructor Create(FixBasePars: TAppPars);
     destructor Destroy; override;
   published
   end;
+
+var
+  FixBase : TFixBase;
 
 implementation
 
@@ -62,6 +64,14 @@ begin
 
 end;
 
+function TFixBase.CreateFixList : TAdsList;
+begin
+  if (FixPars.IsDict) then
+    Result := TDictList.Create
+  else
+    Result := TFreeList.Create;
+  FixList := Result;
+end;
 
 // Проверить и исправить все
 {

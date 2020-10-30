@@ -16,7 +16,6 @@ const
   DATA_DIR_FILTER = 'Advantage Data Tables (*.ADT)|All Files (*.*)|*.*';
   DIR_4TMP_FILTER = 'Advantage Data Dictionaries (*.ADD)|*.ADD|All Files (*.*)|*.*';
 
-function IsDictionary(s: string): Boolean;
 function IsCorrectSrc(Path2Dic : string; IsDict : Boolean): Boolean;
 //function TablesListFromDic(QA: TAdsQuery): string;
 
@@ -28,12 +27,6 @@ implementation
 uses
   SysUtils, AuthF, ServiceProc;
 
-function IsDictionary(s: string): Boolean;
-begin
-  Result := False;
-  if (Pos('.ADD', UpperCase(s)) > 0) then
-    Result := True;
-end;
 
 function IsCorrectSrc(Path2Dic: string; IsDict: Boolean): Boolean;
 var

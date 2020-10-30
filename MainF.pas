@@ -73,7 +73,12 @@ var
 implementation
 
 uses
-  UIHelper, AdsDAO, FixDups, ServiceProc, TableUtils;
+  UIHelper,
+  AdsDAO,
+  FixTypes,
+  FixDups,
+  ServiceProc,
+  TableUtils;
 
 
 {$R *.dfm}
@@ -121,6 +126,9 @@ begin
   rgTestMode.ItemIndex   := i;
   rgDelDupMode.ItemIndex := iDD;
   chkAutoTest.Checked    := AppPars.AutoTest;
+
+  AppPars.IsDictionary;
+  FixBase := TFixBase.Create(AppPars);
 end;
 
 procedure TFormMain.FormDestroy(Sender: TObject);
@@ -150,11 +158,11 @@ end;
 
 procedure TFormMain.cbbPath2SrcCloseUp(Sender: TObject; Accept: Boolean);
 var
-  //PathStart,
+  DictPath : Boolean;
   PathNew: string;
 begin
+  DictPath  := False;
   PathNew   := '';
-  //PathStart := AppPars.Src;
   if (cbbPath2Src.Text = CONNECTIONTYPE_DIRBROWSE) then begin
     // свободные таблицы
     if SelectDirectory(AppPars.Src, [sdAllowCreate, sdPerformCreate, sdPrompt], 0) then begin
@@ -167,17 +175,21 @@ begin
       OpenDialog.InitialDir := AppPars.Src;
       OpenDialog.Filter := DATA_DICTIONARY_FILTER;
       if OpenDialog.Execute then begin
-        PathNew := OpenDialog.FileName;
-        AppPars.Path2Tmp := USER_EMPTY;
+        PathNew  := OpenDialog.FileName;
+        DictPath := True;
+        AppPars.ULogin := USER_EMPTY;
       end
     end
   end;
 
   if (Length(PathNew) > 0) then begin
     AppPars.Src := PathNew;
+    AppPars.IsDictionary;
     cbbPath2Src.Text := PathNew;
-    // флаг запроса авторизации?
-    //dtmdlADS.conAdsBase.Username;
+    if (AppPars.IsDict = True) then
+      AppPars.Path2Src := ExtractFilePath(PathNew)
+    else
+      AppPars.Path2Src := IncludeTrailingPathDelimiter(PathNew);
   end
   else
     cbbPath2Src.Text := FSavedComboText;
@@ -212,7 +224,7 @@ var
   IsAdsDict : Boolean;
 begin
   Result := 0;
-  IsAdsDict := IsDictionary(Src);
+  IsAdsDict := AppPars.IsDictionary;
   if (IsCorrectSrc(Src, IsAdsDict) = True) then begin
     AppPars.IsDict := IsAdsDict;
     AppPars.Src := Src;
@@ -237,14 +249,20 @@ end;
   Результат:    Нет
 -------------------------------------------------------------------------------}
 procedure TFormMain.btnTblListClick(Sender: TObject);
+var
+  i : Integer;
 begin
-  if (List4Fix(cbbPath2Src.Text) = 0) then begin
+  FixBase.CreateFixList;
+  if (FixBase.FixList.List4Fix(AppPars) = 0) then begin
+  //if (List4Fix(cbbPath2Src.Text) = 0) then begin
     if (chkAutoTest.Checked = True) then
       TestSelected(True);
 
   end
-  else  // No Ads tables
-    ;
+  else begin
+    // No Ads tables OR ???
+        ShowMessage('Неправильное имя пользователя или пароль');
+  end;
 
 end;
 
@@ -269,7 +287,7 @@ begin
 
           dtmdlADS.mtSrc.Edit;
 
-          TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.conAdsBase, dtmdlADS.SYSTEM_ALIAS);
+          TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.conAdsBase, AppPars.SysAdsPfx);
           dtmdlADS.FSrcFixInf.AsInteger := Integer(TableInf);
 
           ec := TableInf.Test1Table(TableInf, AppPars.TMode);

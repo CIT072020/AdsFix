@@ -38,6 +38,8 @@ const
   UE_OK       = 0;
   // “аблицы не найдены
   UE_NO_ADS   = 1;
+  UE_BAD_USER = 2;
+  UE_BAD_PATH = 3; 
 
   // мусор в данных
   UE_BAD_DATA = 8901;
@@ -71,7 +73,7 @@ const
 const
   // ¬ыборочных чтений таблицы при среднем уровне тестировани€
   MAX_READ_MEDIUM : Integer = 5000;
-  
+
 type
   // –ежимы тестировани€
   TestMode = (Simple, Medium, Slow);
@@ -100,7 +102,9 @@ type
     AutoFix  : Boolean;
     //FixDupsMode : Integer;
     SysAdsPfx : string;
-    
+
+    function IsDictionary : Boolean;
+
   end;
 
 
@@ -112,6 +116,15 @@ var
   AppPars : TAppPars;
 
 implementation
+
+function TAppPars.IsDictionary : Boolean;
+begin
+  Result := False;
+  if (Pos('.ADD', UpperCase(Src)) > 0) then
+    Result := True;
+  IsDict := Result;
+end;
+
 
 function Split(const delim, str: string): TStringList;
 var
