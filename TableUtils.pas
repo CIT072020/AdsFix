@@ -276,7 +276,8 @@ begin
         for i := 0 to SrcTbl.FieldsInf.Count - 1 do
           if (TFieldsInf(SrcTbl.FieldsInf[i]).Name = OneInd.Fields[j]) then begin
             OneInd.IndFieldsAdr[j] := i;
-            goto QFor;
+            //goto QFor;
+            Break;
           end;
       end;
 QFor:

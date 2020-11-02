@@ -253,8 +253,8 @@ var
   i : Integer;
 begin
   FixBase.CreateFixList;
-  if (FixBase.FixList.List4Fix(AppPars) = 0) then begin
-  //if (List4Fix(cbbPath2Src.Text) = 0) then begin
+  //if (FixBase.FixList.List4Fix(AppPars) = 0) then begin
+  if (List4Fix(cbbPath2Src.Text) = 0) then begin
     if (chkAutoTest.Checked = True) then
       TestSelected(True);
 

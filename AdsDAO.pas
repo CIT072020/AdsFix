@@ -138,7 +138,7 @@ type
   protected
   public
     property Pars : TAppPars read FPars write FPars;
-    property SrcPath : string read FSrcPath write FSrcPath;
+    property Path2Src : string read FSrcPath write FSrcPath;
     property SrcList : TkbmMemTable read FTblList write FTblList;
     property Conn : TAdsConnection read FAdsConn write FAdsConn;
     property TablesCount : Integer read FTCount write FTCount;
@@ -321,6 +321,9 @@ begin
       Active := true;
     end;
     TablesCount := TablesListFromDict(dtmdlADS.qTablesAll);
+    Path2Src := ExtractFilePath(Pars.Src);
+    Pars.Path2Src := Path2Src;
+
     Pars.TotTbls := TablesCount;
     if (TablesCount = 0 ) then
       Result := UE_NO_ADS

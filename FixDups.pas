@@ -57,7 +57,9 @@ begin
   Result := '(' + FieldName + ' is NULL)';
   if  (FieldType in ADS_NUMBERS) then
     Result := Result + ' OR (' + FieldName + ' <= 0)'
-  else if (FieldType in ADS_STRINGS) then
+//  else if (FieldType in ADS_STRINGS) then
+//    Result := Result + ' OR EMPTY(' + FieldName + ')'
+  else if (FieldType in ADS_STRINGS) or (FieldType in ADS_DATES) then
     Result := Result + ' OR EMPTY(' + FieldName + ')'
   else
     bInBrck := False;
@@ -152,7 +154,7 @@ begin
   Q1F.Active := False;
 
   for i := 0 to AdsTbl.FieldsInf.Count - 1 do begin
-    if (i > 1) then
+    if (i > 0) then
       s := s + ' OR ';
     sField := TFieldsInf(AdsTbl.FieldsInf[i]).Name;
     FT := TFieldsInf(AdsTbl.FieldsInf[i]).FieldType;
@@ -277,16 +279,22 @@ var
   i, j : Integer;
   s : String;
   IndInf : TIndexInf;
+
+  FI : TFieldsInf;
 begin
   Result := 'DELETE FROM ' + TblInf.TableName + ' WHERE ' + TblInf.TableName + '.ROWID IN ';
   s := '(SELECT ROWID FROM ' + TblInf.TableName + ' WHERE ';
   IndInf := TblInf.IndexInf.Items[iI];
 
   for i := 0 to IndInf.Fields.Count - 1 do begin
-    if (i > 1) then
+    if (i > 0) then
       s := s + ' OR ';
     j := IndInf.IndFieldsAdr[i];
-    s := s + EmptyFCond(IndInf.Fields.Strings[i], TFieldsInf(TblInf.FieldsInf[j]).FieldType);
+    //s := s + EmptyFCond(IndInf.Fields.Strings[i], TFieldsInf(TblInf.FieldsInf[j]).FieldType);
+
+    FI := TblInf.FieldsInf[j];
+    s := s + EmptyFCond(IndInf.Fields.Strings[i], FI.FieldType);
+
   end;
   Result := Result + s + ')';
 end;
