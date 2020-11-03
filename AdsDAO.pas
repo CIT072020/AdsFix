@@ -6,85 +6,15 @@ uses
   SysUtils, Classes, adsset, adscnnct, DB, adsdata, adsfunc, adstable, ace,
   kbmMemTable, ServiceProc;
 
-
   //FXDP_DEL_ALL : Integer = 1;
   //FXDP_1_ASIS  : Integer = 2;
   //FXDP_1_MRG   : Integer = 3;
 
-  // типы полей ADS
-type
- TAdsFTypes = set of 0..ADS_MAX_FIELD_TYPE;
-
-const
-  ADS_BOOL    : TAdsFTypes = [
-    ADS_LOGICAL];
-  ADS_STRINGS : TAdsFTypes = [
-    ADS_STRING,
-    ADS_VARCHAR,
-    ADS_CISTRING,
-    ADS_MEMO,
-    ADS_NCHAR,
-    ADS_NVARCHAR,
-    ADS_NMEMO,
-    ADS_VARCHAR_FOX];
-  ADS_NUMBERS : TAdsFTypes = [
-    ADS_NUMERIC,
-    ADS_DOUBLE,
-    ADS_INTEGER,
-    ADS_SHORTINT,
-    ADS_AUTOINC,
-    ADS_CURDOUBLE,
-    ADS_MONEY,
-    ADS_LONGLONG,
-    ADS_ROWVERSION];
-  ADS_DATES : TAdsFTypes = [
-    ADS_DATE,
-    ADS_COMPACTDATE,
-    ADS_TIME,
-    ADS_TIMESTAMP,
-    ADS_MODTIME];
-  ADS_BIN : TAdsFTypes = [
-    ADS_BINARY,
-    ADS_IMAGE,
-    ADS_RAW,
-    ADS_VARBINARY_FOX,
-    ADS_SYSTEM_FIELD];
 
 type
   ITest = interface
   end;
 
-type
-  // —писок таблиц дл€ восстановлени€
-  TSrcTableList = class
-    IsDict : Boolean;
-    Path2Src : String;
-    Path2Tmp : String;
-    AllT     : TkbmMemTable;
-  end;
-
-type
-  // —писок таблиц дл€ восстановлени€ на базе ADS-Dictionary
-  TSrcDic = class(TSrcTableList)
-  private
-    FSrcDict : string;
-    FUName : string;
-    FPass : string;
-  public
-    property SrcDict : string read FSrcDict write FSrcDict;
-  end;
-
-
-type
-  // описание записи в наборе дубликатов
-  TDupRow = class
-    RowID : string;
-    FillPcnt : Integer;
-    DelRow : Boolean;
-  end;
-
-  TFixAds = class
-  end;
 
 type
   TdtmdlADS = class(TDataModule)
@@ -114,20 +44,15 @@ type
     tblTmp: TAdsTable;
     procedure DataModuleCreate(Sender: TObject);
   private
-    { Private declarations }
     FSysAlias : string;
   public
-    { Public declarations }
     property SYSTEM_ALIAS : string read FSysAlias write FSysAlias;
-
-    procedure AdsConnect(Path2Dic, Login, Password: string);
   end;
 
-
-
-
-
+//------------------
 type
+
+  // —писок исходных ADS-таблиц дл€ проверки и восстановлени€
   TAdsList = class
   private
     FPars    : TAppPars;
@@ -138,12 +63,16 @@ type
   protected
   public
     property Pars : TAppPars read FPars write FPars;
+    // путь к словарю/таблице
     property Path2Src : string read FSrcPath write FSrcPath;
+    // MemTable со списком
     property SrcList : TkbmMemTable read FTblList write FTblList;
     property Conn : TAdsConnection read FAdsConn write FAdsConn;
     property TablesCount : Integer read FTCount write FTCount;
 
     function List4Fix(AppPars : TAppPars) : Integer; virtual; abstract;
+    // “естирование всех или только отмеченных
+    procedure TestSelected(ModeAll : Boolean; TMode : TestMode);  virtual; abstract;
 
     constructor Create(Cnct : TAdsConnection = nil);
     destructor Destroy; override;
@@ -154,11 +83,16 @@ type
   // —писок таблиц на базе словар€ ADS
   TDictList = class(TAdsList)
   private
+    FDictPath : string;
+
     function DictAvail : Boolean;
     function TablesListFromDict(QA: TAdsQuery): Integer;
   protected
   public
+    property DictFullPath : string read FDictPath write FDictPath;
     function List4Fix(AppPars : TAppPars) : Integer; override;
+    // “естирование всех или только отмеченных
+    procedure TestSelected(ModeAll : Boolean; TMode : TestMode);
   published
   end;
 
@@ -170,17 +104,25 @@ type
   protected
   public
     function List4Fix(AppPars : TAppPars) : Integer; override;
+    // “естирование всех или только отмеченных
+    procedure TestSelected(ModeAll : Boolean; TMode : TestMode);
   published
+  end;
+
+  // описание записи в наборе дубликатов
+  TDupRow = class
+    RowID : string;
+    FillPcnt : Integer;
+    DelRow : Boolean;
   end;
 
 //---
 function SetSysAlias(QV : TAdsQuery) : string;
-function PrepareList(Path2Dic: string) : Integer;
+//function PrepareList(Path2Dic: string) : Integer;
 procedure SortByState(SetNow : Boolean);
 
 var
   dtmdlADS: TdtmdlADS;
-  //SrcList : TSrcTableList;
 
 implementation
 
@@ -188,8 +130,26 @@ uses
   Controls,
   StrUtils,
   FileUtil,
+  TableUtils,
   FixDups, AuthF;
 {$R *.dfm}
+
+// установка сортировки списка таблиц по статусу
+procedure SortByState(SetNow : Boolean);
+begin
+  if (SetNow = True) then
+    dtmdlADS.mtSrc.IndexName := IDX_SRC
+  else
+    dtmdlADS.mtSrc.IndexName := '';
+end;
+
+
+// установка сортировки списка таблиц по статусу
+procedure TdtmdlADS.DataModuleCreate(Sender: TObject);
+begin
+  dtmdlADS.mtSrc.AddIndex(IDX_SRC, 'State', [ixDescending]);
+  SortByState(True);
+end;
 
 // добавление префикса /ANSI_ (начина€ с верси€ 10)
 function SetSysAlias(QV: TAdsQuery): string;
@@ -228,8 +188,7 @@ begin
   inherited Destroy;
 end;
 
-
-// ѕроверка корректности подключени€
+// ѕроверка корректности подключени€ к словарной базе
 function TDictList.DictAvail : Boolean;
 var
   aUser: AParams;
@@ -265,7 +224,7 @@ begin
   end;
 end;
 
-// —писок таблиц - в MemTable
+// —писок таблиц из словар€ - в MemTable
 function TDictList.TablesListFromDict(QA: TAdsQuery): Integer;
 var
   i: Integer;
@@ -274,14 +233,13 @@ var
 begin
   i := 0;
   with QA do begin
-    //ClearTablesList(QA.Owner);
-    dtmdlADS.mtSrc.Close;
-    dtmdlADS.mtSrc.Active := True;
+    SrcList.Close;
+    SrcList.Active := True;
 
     First;
     while not Eof do begin
       i := i + 1;
-      dtmdlADS.mtSrc.Append;
+      SrcList.Append;
 
       dtmdlADS.FSrcNpp.AsInteger  := i;
       dtmdlADS.FSrcMark.AsBoolean := False;
@@ -300,31 +258,31 @@ begin
       dtmdlADS.FSrcState.AsInteger := TST_UNKNOWN;
       dtmdlADS.FSrcFixInf.AsInteger := 0;
 
-      dtmdlADS.mtSrc.Post;
+      SrcList.Post;
       Next;
     end;
   end;
   Result := i;
 end;
 
-// ѕостроение списка таблиц дл€ восстановлени€
+// ѕостроение словарного списка таблиц дл€ восстановлени€
 function TDictList.List4Fix(AppPars : TAppPars) : Integer;
 begin
   Pars := AppPars;
+  DictFullPath := Pars.Src;
   if (DictAvail = True) then begin
     Pars.SysAdsPfx := SetSysAlias(dtmdlADS.qAny);
     with dtmdlADS.qTablesAll do begin
       Active := false;
       AdsCloseSQLStatement;
       SQL.Clear;
-      SQL.Add('SELECT * FROM ' + Pars.SysAdsPfx + 'TABLES');
+      SQL.Add('SELECT * FROM ' + dtmdlADS.SYSTEM_ALIAS + 'TABLES');
       Active := true;
     end;
     TablesCount := TablesListFromDict(dtmdlADS.qTablesAll);
     Path2Src := ExtractFilePath(Pars.Src);
-    Pars.Path2Src := Path2Src;
 
-    Pars.TotTbls := TablesCount;
+    //Pars.TotTbls := TablesCount;
     if (TablesCount = 0 ) then
       Result := UE_NO_ADS
     else
@@ -334,9 +292,59 @@ begin
     Result := UE_BAD_USER;
 end;
 
+// “естирование всех или только отмеченных
+procedure TDictList.TestSelected(ModeAll : Boolean; TMode : TestMode);
+var
+  ec, i: Integer;
+  TableInf : TTableInf;
+begin
+    // when progress bar be ready - actually
+    //SrcList.DisableControls;
+
+    with SrcList do begin
+
+      First;
+      i := 0;
+      while not Eof do begin
+        i := i + 1;
+        if ((dtmdlADS.FSrcState.AsInteger = TST_UNKNOWN) AND (ModeAll = True))
+          OR ((dtmdlADS.FSrcMark.AsBoolean = True) AND (ModeAll = False)) then begin
+          // все непроверенные или отмеченные
+          Edit;
+
+          TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.conAdsBase, dtmdlADS.SYSTEM_ALIAS);
+          dtmdlADS.FSrcFixInf.AsInteger := Integer(TableInf);
+
+          ec := TableInf.Test1Table(TableInf, TMode);
+          dtmdlADS.FSrcAIncs.AsInteger := TableInf.FieldsAI.Count;
+          dtmdlADS.FSrcTestCode.AsInteger := ec;
+          if (ec > 0) then begin
+            dtmdlADS.FSrcMark.AsBoolean := True;
+            dtmdlADS.FSrcErrNative.AsInteger := TableInf.ErrInfo.NativeErr;
+            ec := TST_ERRORS;
+          end
+          else begin
+            dtmdlADS.FSrcMark.AsBoolean := False;
+            ec := TST_GOOD;
+            end;
+          dtmdlADS.FSrcState.AsInteger := ec;
+
+          Post;
+        end;
+        Next;
+      end;
+      First;
+
+    end;
+    SrcList.EnableControls;
+
+end;
+
+
 function TFreeList.PathAvail : Boolean;
 begin
   Result := True;
+  Path2Src := IncludeTrailingPathDelimiter(Pars.Src);
 end;
 
 function TFreeList.TablesListFromPath(QA: TAdsQuery): Integer;
@@ -351,7 +359,7 @@ begin
   if (PathAvail = True) then begin
     Pars.SysAdsPfx := SetSysAlias(dtmdlADS.qAny);
     TablesCount := TablesListFromPath(dtmdlADS.qTablesAll);
-    Pars.TotTbls := TablesCount;
+    //Pars.TotTbls := TablesCount;
     if (TablesCount = 0 ) then
       Result := UE_NO_ADS
     else
@@ -361,32 +369,9 @@ begin
     Result := UE_BAD_PATH;
 end;
 
-// установка сортировки списка таблиц по статусу
-procedure SortByState(SetNow : Boolean);
+// “естирование всех или только отмеченных
+procedure TFreeList.TestSelected(ModeAll : Boolean; TMode : TestMode);
 begin
-  if (SetNow = True) then
-    dtmdlADS.mtSrc.IndexName := IDX_SRC
-  else
-    dtmdlADS.mtSrc.IndexName := '';
-end;
-
-
-// установка сортировки списка таблиц по статусу
-procedure TdtmdlADS.DataModuleCreate(Sender: TObject);
-begin
-  dtmdlADS.mtSrc.AddIndex(IDX_SRC, 'State', [ixDescending]);
-  SortByState(True);
-end;
-
-//
-procedure TdtmdlADS.AdsConnect(Path2Dic, Login, Password: string);
-begin
-    //подключаемс€ к базе
-  dtmdlADS.conAdsBase.IsConnected := False;
-  dtmdlADS.conAdsBase.Username    := Login;
-  dtmdlADS.conAdsBase.Password    := Password;
-  dtmdlADS.conAdsBase.ConnectPath := Path2Dic;
-  dtmdlADS.conAdsBase.IsConnected := True;
 end;
 
 {
@@ -405,8 +390,8 @@ begin
 end;
 }
 
-
 // —писок таблиц - в MemTable
+{
 function TablesListFromDic(QA: TAdsQuery): Integer;
 var
   i: Integer;
@@ -467,7 +452,7 @@ begin
       SQL.Add('SELECT * FROM ' + dtmdlADS.SYSTEM_ALIAS + 'TABLES');
       Active := true;
     end;
-    AppPars.TotTbls := TablesListFromDic(dtmdlADS.qTablesAll);
+    //AppPars.TotTbls := TablesListFromDic(dtmdlADS.qTablesAll);
     Result := AppPars.TotTbls;
   end
   else begin
@@ -476,5 +461,5 @@ begin
   end;
 
 end;
-
+}
 end.

@@ -3,7 +3,47 @@ unit ServiceProc;
 interface
 
 uses
-  Windows, SysUtils, Classes, StrUtils, ShlObj;
+  Windows, SysUtils, Classes, StrUtils, ShlObj,
+  ace;
+  
+  // типы полей ADS
+type
+ TAdsFTypes = set of 0..ADS_MAX_FIELD_TYPE;
+
+const
+  ADS_BOOL    : TAdsFTypes = [
+    ADS_LOGICAL];
+  ADS_STRINGS : TAdsFTypes = [
+    ADS_STRING,
+    ADS_MEMO,
+    ADS_VARCHAR,
+    ADS_CISTRING,
+    ADS_NCHAR,
+    ADS_NVARCHAR,
+    ADS_NMEMO,
+    ADS_VARCHAR_FOX];
+  ADS_NUMBERS : TAdsFTypes = [
+    ADS_NUMERIC,
+    ADS_DOUBLE,
+    ADS_INTEGER,
+    ADS_SHORTINT,
+    ADS_AUTOINC,
+    ADS_CURDOUBLE,
+    ADS_MONEY,
+    ADS_LONGLONG,
+    ADS_ROWVERSION];
+  ADS_DATES : TAdsFTypes = [
+    ADS_DATE,
+    ADS_COMPACTDATE,
+    ADS_TIME,
+    ADS_TIMESTAMP,
+    ADS_MODTIME];
+  ADS_BIN : TAdsFTypes = [
+    ADS_BINARY,
+    ADS_IMAGE,
+    ADS_RAW,
+    ADS_VARBINARY_FOX,
+    ADS_SYSTEM_FIELD];
 
 const
   // Начальное значение User Login
@@ -85,13 +125,13 @@ type
   TAppPars = class
     Src      : String;
     IsDict   : Boolean;
-    Path2Src : String;
+    //Path2Src : String;
     Path2Tmp : String;
     // Установленные Login/Password
     ULogin   : String;
     UPass    : String;
     // всего таблиц
-    TotTbls  : Integer;
+    //TotTbls  : Integer;
     // Режим тестирования
     TMode    : TestMode;
     // Способ удаления дубликатов
@@ -482,6 +522,28 @@ begin
 end;
 }
 
+// Построение списка таблиц для восстановления
+{
+function List4Fix(Src : string) : Integer;
+var
+  IsAdsDict : Boolean;
+begin
+  Result := 0;
+  IsAdsDict := AppPars.IsDictionary;
+  if (IsCorrectSrc(Src, IsAdsDict) = True) then begin
+    AppPars.IsDict := IsAdsDict;
+    AppPars.Src := Src;
+    if (IsAdsDict = True) then
+      AppPars.Path2Src := ExtractFilePath(Src)
+    else
+      AppPars.Path2Src := IncludeTrailingPathDelimiter(Src);
+    if (PrepareList(Src) <= 0) then
+      Result := UE_NO_ADS;
+  end
+  else
+    Result := UE_NO_ADS;
+end;
+}
 
 
 end.

@@ -65,7 +65,6 @@ type
   public
     { Public declarations }
   end;
-procedure TestSelected(ModeAll : Boolean);
 
 var
   FormMain : TFormMain;
@@ -79,7 +78,6 @@ uses
   FixDups,
   ServiceProc,
   TableUtils;
-
 
 {$R *.dfm}
 
@@ -186,10 +184,12 @@ begin
     AppPars.Src := PathNew;
     AppPars.IsDictionary;
     cbbPath2Src.Text := PathNew;
+{
     if (AppPars.IsDict = True) then
       AppPars.Path2Src := ExtractFilePath(PathNew)
     else
       AppPars.Path2Src := IncludeTrailingPathDelimiter(PathNew);
+}      
   end
   else
     cbbPath2Src.Text := FSavedComboText;
@@ -218,45 +218,17 @@ begin
 end;
 
 
-// Построение списка таблиц для восстановления
-function List4Fix(Src : string) : Integer;
-var
-  IsAdsDict : Boolean;
-begin
-  Result := 0;
-  IsAdsDict := AppPars.IsDictionary;
-  if (IsCorrectSrc(Src, IsAdsDict) = True) then begin
-    AppPars.IsDict := IsAdsDict;
-    AppPars.Src := Src;
-    if (IsAdsDict = True) then
-      AppPars.Path2Src := ExtractFilePath(Src)
-    else
-      AppPars.Path2Src := IncludeTrailingPathDelimiter(Src);
-    if (PrepareList(Src) <= 0) then
-      Result := UE_NO_ADS;
-  end
-  else
-    Result := UE_NO_ADS;
-end;
-
-
 {-------------------------------------------------------------------------------
   Процедура: TFormMain.btnTblListClick(
   Построение списка таблиц для восстановления
-  Автор:    Alex
-  Дата:  2020.08.27
-  Входные параметры: Sender: TObject
-  Результат:    Нет
 -------------------------------------------------------------------------------}
 procedure TFormMain.btnTblListClick(Sender: TObject);
 var
   i : Integer;
 begin
-  FixBase.CreateFixList;
-  //if (FixBase.FixList.List4Fix(AppPars) = 0) then begin
-  if (List4Fix(cbbPath2Src.Text) = 0) then begin
+  if (FixBase.CreateFixList.List4Fix(AppPars) = 0) then begin
     if (chkAutoTest.Checked = True) then
-      TestSelected(True);
+      FixBase.FixList.TestSelected(True, AppPars.TMode);
 
   end
   else begin
@@ -266,56 +238,6 @@ begin
 
 end;
 
-// Тестирование всех или только отмеченных
-procedure TestSelected(ModeAll : Boolean);
-var
-  ec, i: Integer;
-begin
-  if (AppPars.IsDict = True) then begin
-
-    // when progress bar be ready - actually
-    //dtmdlADS.mtSrc.DisableControls;
-
-    with dtmdlADS.mtSrc do begin
-
-      First;
-      i := 0;
-      while not Eof do begin
-        i := i + 1;
-        if ((dtmdlADS.FSrcState.AsInteger = TST_UNKNOWN) AND (ModeAll = True))
-          OR ((dtmdlADS.FSrcMark.AsBoolean = True) AND (ModeAll = False)) then begin
-
-          dtmdlADS.mtSrc.Edit;
-
-          TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.conAdsBase, AppPars.SysAdsPfx);
-          dtmdlADS.FSrcFixInf.AsInteger := Integer(TableInf);
-
-          ec := TableInf.Test1Table(TableInf, AppPars.TMode);
-          dtmdlADS.FSrcAIncs.AsInteger := TableInf.FieldsAI.Count;
-          dtmdlADS.FSrcTestCode.AsInteger := ec;
-          if (ec > 0) then begin
-            dtmdlADS.FSrcMark.AsBoolean := True;
-            dtmdlADS.FSrcErrNative.AsInteger := TableInf.ErrInfo.NativeErr;
-            ec := TST_ERRORS;
-          end
-          else begin
-            dtmdlADS.FSrcMark.AsBoolean := False;
-            ec := TST_GOOD;
-            end;
-          dtmdlADS.FSrcState.AsInteger := ec;
-
-          dtmdlADS.mtSrc.Post;
-        end;
-        Next;
-      end;
-      First;
-
-    end;
-    dtmdlADS.mtSrc.EnableControls;
-
-  end;
-
-end;
 
 
 
@@ -369,7 +291,7 @@ procedure TFormMain.btnTestClick(Sender: TObject);
 begin
   TButtonControl(Sender).Enabled := False;
   try
-    TestSelected(False);
+    FixBase.FixList.TestSelected(False, AppPars.TMode);
   finally
     TButtonControl(Sender).Enabled := True;
   end;
@@ -413,10 +335,10 @@ begin
 end;
 
 // Проверить и исправить все
-procedure FullFix(Src: string);
+procedure FullFix;
 begin
-  if (List4Fix(Src) = 0) then begin
-    TestSelected(True);
+  if (FixBase.CreateFixList.List4Fix(AppPars) = 0) then begin
+    FixBase.FixList.TestSelected(True, AppPars.TMode);
     FullFixAllMarked(False);
   end
   else
@@ -430,7 +352,7 @@ procedure TFormMain.btnFixAllClick(Sender: TObject);
 begin
   TButtonControl(Sender).Enabled := False;
   try
-    FullFix(cbbPath2Src.Text);
+    FullFix;
   finally
     TButtonControl(Sender).Enabled := True;
   end;

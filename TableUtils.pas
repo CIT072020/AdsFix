@@ -6,7 +6,7 @@ uses
   SysUtils,
   Classes, DB,
   AdsData, Ace, AdsTable, AdsCnnct,
-  ServiceProc, AdsDAO;
+  ServiceProc;
 
 type
   // описание полей таблицы
@@ -32,17 +32,17 @@ type
   // Info по ошибке
   TErrInfo = class
   // “екущий статус таблицы
-    State    : Integer;
+    State     : Integer;
   //  оды ошибок тестировани€
-    ErrClass : Integer;
-    NativeErr  : Integer;
-    MsgErr   : string;
+    ErrClass  : Integer;
+    NativeErr : Integer;
+    MsgErr    : string;
     //  од завершени€ "освобождени€ таблицы"
-    PrepErr  : Integer;
+    PrepErr   : Integer;
     //  од завершени€ Fix таблицы
-    FixErr   : Integer;
+    FixErr    : Integer;
     //  од завершени€ INSERT таблицы
-    InsErr   : Integer;
+    InsErr    : Integer;
   end;
 
 type
@@ -87,10 +87,10 @@ type
     // количество уникальных индексов
     IndCount  : Integer;
 
+    // описание полей таблицы
+    FieldsInf : TList;
     // описание индексов
     IndexInf  : TList;
-    //
-    FieldsInf    : TList;
     // пол€ с типом autoincrement
     FieldsAI  : TStringList;
 

@@ -12,7 +12,8 @@ uses
   MainF in 'MainF.pas' {FormMain},
   TableUtils in 'TableUtils.pas',
   FixTypes in 'FixTypes.pas',
-  FixObject in 'FixObject.pas';
+  FixObject in 'FixObject.pas',
+  uIFixDmgd in 'uIFixDmgd.pas';
 
 {$R *.res}
 

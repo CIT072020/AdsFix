@@ -16,7 +16,7 @@ const
   DATA_DIR_FILTER = 'Advantage Data Tables (*.ADT)|All Files (*.*)|*.*';
   DIR_4TMP_FILTER = 'Advantage Data Dictionaries (*.ADD)|*.ADD|All Files (*.*)|*.*';
 
-function IsCorrectSrc(Path2Dic : string; IsDict : Boolean): Boolean;
+//function IsCorrectSrc(Path2Dic : string; IsDict : Boolean): Boolean;
 //function TablesListFromDic(QA: TAdsQuery): string;
 
 //procedure PrepareList(Path2Dic: string);
@@ -27,7 +27,7 @@ implementation
 uses
   SysUtils, AuthF, ServiceProc;
 
-
+{
 function IsCorrectSrc(Path2Dic: string; IsDict: Boolean): Boolean;
 var
   NeedCnnct: Boolean;
@@ -68,8 +68,7 @@ begin
     Result := True;
   end;
 end;
-
-
+}
 
 
 function IsCorrectTmp(Path2Tmp: string): string;
