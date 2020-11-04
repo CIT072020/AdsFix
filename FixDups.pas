@@ -18,6 +18,42 @@ const
   FWT_STR  : Integer = 30;
   FWT_BIN  : Integer = 5;
 
+type
+  TFixErrUniq = class(TInterfacedObject)
+  // Класс исправления ошибок уникальности индексов
+  //
+  // в таблицах ADS
+  private
+    FPars     : TAppPars;
+    FTableInf : TTableInf;
+    FTmpConn  : TAdsConnection;
+    FQDups    : TAdsQuery;
+    FDelEmps  : Integer;
+    FDelDups  : Integer;
+
+    // Поиск пустых значений [под]ключей среди уникадьных индексов
+    function SQL_7207_SearchEmpty(IndInf : TIndexInf) : string;
+    // Поиск ROWID дубликатов ключей среди уникадьных индексов
+    function UniqRepeat(iI : Integer) : string;
+  protected
+  public
+    // Параметры проверки и исправления
+    property FixPars : TAppPars read FPars write FPars;
+    // Объект состояния таблицы
+    property SrcTbl : TTableInf read FTableInf write FTableInf;
+    // ADS-Connection для папки TMP
+    property TmpConn: TAdsConnection read FTmpConn write FTmpConn;
+    // Дубликаты по GROUP BY
+    property QDups: TAdsQuery read FQDups write FQDups;
+
+    // Исправление ошибок 7200, 7207
+    function Fix7207 : Integer;
+
+    constructor Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection);
+    destructor Destroy; override;
+  published
+  end;
+
 
 procedure FixAllMarked;
 // Исправить оригинал для отмеченных
@@ -39,6 +75,25 @@ uses
   uIFixDmgd;
 
 
+constructor TFixErrUniq.Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection);
+begin
+  SrcTbl  := TI;
+  FixPars := Pars;
+  TmpConn := Cn;
+
+  QDups := TAdsQuery.Create(SrcTbl.AdsT.Owner);
+  QDups.AdsConnection := Cn;
+end;
+
+destructor TFixErrUniq.Destroy;
+begin
+  inherited Destroy;
+end;
+
+
+
+
+
 function CopyOneFile(const Src, Dst: string): Integer;
 begin
   Result := 0;
@@ -48,7 +103,7 @@ begin
     Result := 1;
   end;
 end;
-  
+
 function EmptyFCond(FieldName : String; FieldType : Integer; IsNOT : Boolean = False) : string;
 var
   bInBrck : Boolean;
@@ -73,36 +128,6 @@ end;
 function FieldInIndex(FieldName : String) : Boolean;
 begin
   Result := False;
-end;
-
-
-{-------------------------------------------------------------------------------
-  Procedure: UniqRepeat
-  Построение запроса на поиск совпадающих уникальных ключей вида
-  SELECT f1, f2, ... COUNT(*) as DupCount
-    FROM T GROUP BY 1, 2, ...
-    HAVING (COUNT(*) >= 1)
-  Arguments: AdsTble: string
-  Result:    None
--------------------------------------------------------------------------------}
-function UniqRepeat(AdsTbl : TTableInf; iI : Integer) : string;
-var
-  IndInf : TIndexInf;
-begin
-  IndInf := AdsTbl.IndexInf.Items[iI];
-{
-  Result := 'SELECT ' + AdsTbl.IndexInf.Items[iI].CommaSet + ' COUNT(*) as DupCount FROM ' +
-    AdsTbl.TableName + ' GROUP BY ' + AdsTbl.IndexInf.Items[iI].CommaSet +
-    ' HAVING (COUNT(*) > 1)';
-}
-  Result := 'SELECT ' + AL_SRC + '.ROWID, ''' + IntToStr(iI) + '''+' +
-    AL_DUP + '.ROWID AS ' + AL_DKEY + AL_DUPCNTF + IndInf.AlsCommaSet +
-    ' FROM ' + AdsTbl.TableName + ' ' + AL_SRC +
-    ' INNER JOIN (SELECT COUNT(*) AS ' + AL_DUPCNT + ',' + IndInf.CommaSet +
-    ' FROM ' + AdsTbl.TableName + ' GROUP BY ' + IndInf.CommaSet +
-    ' HAVING (COUNT(*) > 1) ) ' + AL_DUP +
-    ' ON ' + IndInf.EquSet;
-  Result := Result + ' ORDER BY ' + AL_DKEY;
 end;
 
 
@@ -274,90 +299,96 @@ end;
 
 
 
-function SQL_7207_SearchEmpty(TblInf : TTableInf; iI : Integer; nMode : Integer) : string;
+
+// SQL-запрос создания списка ROWID дубликатов с пустыми [под]ключами уникального индекса
+// ---
+// SELECT S.ROWID, '0'+D.ROWID AS DUPGKEY,D.DUPCNT,S.TYPEOBJ,S.ID,S.DATES,S.POKAZ
+//   FROM BaseTextProp S INNER JOIN
+//   (
+//     SELECT COUNT(*) AS DUPCNT,TYPEOBJ,ID,DATES,POKAZ
+//       FROM BaseTextProp GROUP BY TYPEOBJ,ID,DATES,POKAZ HAVING (COUNT(*) > 1)
+//    ) D
+//    ON (S.TYPEOBJ=D.TYPEOBJ) AND (S.ID=D.ID) AND (S.DATES=D.DATES) AND (S.POKAZ=D.POKAZ)
+//    ORDER BY DUPGKEY'
+function TFixErrUniq.UniqRepeat(iI : Integer) : string;
+var
+  IndInf : TIndexInf;
+begin
+  IndInf := SrcTbl.IndexInf.Items[iI];
+  Result := Format(
+    'SELECT %s.ROWID, ''%d'' + %s.ROWID AS %s%s %s',     [AL_SRC, iI, AL_DUP, AL_DKEY, AL_DUPCNTF, IndInf.AlsCommaSet]);
+  Result := Result + Format(
+    ' FROM %s %s INNER JOIN (SELECT COUNT(*) AS %s, %s', [SrcTbl.TableName, AL_SRC, AL_DUPCNT, IndInf.CommaSet]);
+  Result := Result + Format(
+    ' FROM %s GROUP BY %s HAVING (COUNT(*) > 1) ) %s',   [SrcTbl.TableName, IndInf.CommaSet, AL_DUP]);
+  Result := Result + Format(
+    ' ON %s ORDER BY %s',                                [IndInf.EquSet, AL_DKEY]);
+end;
+
+// SQL-команда удаления записей с пустыми [под]ключами уникального индекса
+function TFixErrUniq.SQL_7207_SearchEmpty(IndInf : TIndexInf) : string;
 var
   i, j : Integer;
   s : String;
-  IndInf : TIndexInf;
-
-  FI : TFieldsInf;
 begin
-  Result := 'DELETE FROM ' + TblInf.TableName + ' WHERE ' + TblInf.TableName + '.ROWID IN ';
-  s := '(SELECT ROWID FROM ' + TblInf.TableName + ' WHERE ';
-  IndInf := TblInf.IndexInf.Items[iI];
+  s := '';
 
   for i := 0 to IndInf.Fields.Count - 1 do begin
     if (i > 0) then
       s := s + ' OR ';
     j := IndInf.IndFieldsAdr[i];
-    //s := s + EmptyFCond(IndInf.Fields.Strings[i], TFieldsInf(TblInf.FieldsInf[j]).FieldType);
-
-    FI := TblInf.FieldsInf[j];
-    s := s + EmptyFCond(IndInf.Fields.Strings[i], FI.FieldType);
-
+    s := s + EmptyFCond(IndInf.Fields.Strings[i], TFieldsInf(SrcTbl.FieldsInf[j]).FieldType);
   end;
-  Result := Result + s + ')';
+  Result := Format(
+    'DELETE FROM %s WHERE %s.ROWID IN (SELECT ROWID FROM %s WHERE %s)'
+    ,[SrcTbl.TableName, SrcTbl.TableName, SrcTbl.TableName, s]
+    );
 end;
 
-
-{-------------------------------------------------------------------------------
-  Procedure: Fix7207
-  Author:    Alex
-  DateTime:  2020.08.10
-  Arguments: Table: string
-  Result:    None
--------------------------------------------------------------------------------}
-function Fix7207(TblInf: TTableInf; QDupGroups: TAdsQuery): Integer;
+function TFixErrUniq.Fix7207: Integer;
 var
-  RowFix,
-  j, i: Integer;
+  RowFix, j, i: Integer;
   sExec: string;
 begin
-    RowFix := 0;
-    with QDupGroups do begin
-      if Active then
-        Close;
+  Result := 0;
+  FDelEmps := 0;
+  FDelDups := 0;
+  try
+    with QDups do begin
 
-      TblInf.DupRows := TList.Create;
+      SrcTbl.DupRows := TList.Create;
 
-      for i := 0 to TblInf.IndCount - 1 do begin
-          // для всех уникальных индексов таблицы
+      for i := 0 to SrcTbl.IndCount - 1 do begin
+      // для всех уникальных индексов таблицы
 
-          // поиск и удаление пустых [под]ключей
-        sExec := SQL_7207_SearchEmpty(TblInf, i, 1);
-        j := AdsConnection.Execute(sExec);
-        RowFix := RowFix + j;
+        // поиск и удаление пустых [под]ключей
+        sExec := SQL_7207_SearchEmpty(SrcTbl.IndexInf.Items[i]);
+        j := TmpConn.Execute(sExec);
+        FDelEmps := FDelEmps + j;
 
-          // поиск совпадающих ключей
+        // поиск совпадающих ключей
         SQL.Clear;
-        sExec := UniqRepeat(TblInf, i);
+        sExec := UniqRepeat(i);
         SQL.Add(sExec);
         VerifySQL;
         //ExecSQL;
         Active := True;
         if (RecordCount > 0) then begin
-
           // для всех групп с одинаковым значением индекса
           // оставить одну запись из группы
-          LeaveOnlyAllowed(QDupGroups, TblInf, i, dtmdlADS.qDst);
-
-          DelDups4Idx(TblInf);
+          LeaveOnlyAllowed(QDups, SrcTbl, i, dtmdlADS.qDst);
+          FDelDups := FDelDups + DelDups4Idx(SrcTbl);
         end;
-
-
-          //ExecSQL;
-          //Result := Result + RowsAffected;
       end;
 
       // поиск некорректных AUTOINC
-      DelOtherDups(TblInf);
+      DelOtherDups(SrcTbl);
 
     end;
-
+  except
+  end;
+  Result := FDelEmps + FDelDups;
 end;
-
-
-
 
 
 
@@ -366,6 +397,7 @@ end;
 function TblErrorController(SrcTbl: TTableInf): Integer;
 var
   FixState : Integer;
+  FixDupU  : TFixErrUniq;
 begin
   try
     if (dtmdlADS.cnABTmp.IsConnected) then
@@ -380,10 +412,13 @@ begin
 
     FixState := FIX_GOOD;
     SrcTbl.RowsFixed := 0;
+
+
     case SrcTbl.ErrInfo.ErrClass of
       7008, 7207:
         begin
-            SrcTbl.RowsFixed := Fix7207(SrcTbl, dtmdlADS.qDupGroups);
+            FixDupU := TFixErrUniq.Create(SrcTbl, AppPars, dtmdlADS.cnABTmp);
+            SrcTbl.RowsFixed := FixDupU.Fix7207;
         end;
       7200:
         begin
@@ -392,8 +427,10 @@ begin
             PutError(EMSG_SORRY);
             FixState := FIX_NOTHG;
           end
-          else
-            SrcTbl.RowsFixed := Fix7207(SrcTbl, dtmdlADS.qDupGroups);
+          else begin
+            FixDupU := TFixErrUniq.Create(SrcTbl, AppPars, dtmdlADS.cnABTmp);
+            SrcTbl.RowsFixed := FixDupU.Fix7207;
+          end;
         end;
       UE_BAD_DATA:
         begin
@@ -535,88 +572,97 @@ end;
 
 
 // Вставка в обнуляемый оригинал исправленных записей
-function ChangeOriginal(P2Src, P2Tmp : string; SrcTbl: TTableInf): Boolean;
+function ChangeOriginal(P2Src, P2Tmp: string; SrcTbl: TTableInf): Boolean;
 var
-  ecb: Boolean;
+  ErrAdm, ecb: Boolean;
   i: Integer;
   FileSrc, FileDst, TmpName, ss, sd: string;
   Span: TSpan;
-  Conn : TAdsConnection;
+  Conn: TAdsConnection;
 begin
   Result := False;
-
-  SrcTbl.AdsT.Active := False;
-  Conn := SrcTbl.AdsT.AdsConnection;
-  Conn.Disconnect;
-
-  FileSrc := P2Src + SrcTbl.TableName;
-  FileDst := P2Tmp + SrcTbl.TableName + '.adt';
-
-  SrcTbl.ErrInfo.State  := INS_ERRORS;
+  SrcTbl.ErrInfo.State := INS_ERRORS;
   SrcTbl.ErrInfo.InsErr := UE_BAD_INS;
+  try
+    SrcTbl.AdsT.Active := False;
+    Conn := SrcTbl.AdsT.AdsConnection;
+    Conn.Disconnect;
 
-  if (SrcTbl.NeedBackUp = True) then begin
+    ecb := True;
+    ErrAdm := True;
+
+    FileSrc := P2Src + SrcTbl.TableName;
+    FileDst := P2Tmp + SrcTbl.TableName + '.adt';
+
+    if (SrcTbl.NeedBackUp = True) then begin
     // Перед вставкой сделать копию
-    TmpName := P2Src + ORGPFX + SrcTbl.TableName;
-    ecb := DeleteFiles(TmpName + '.*');
+      TmpName := P2Src + ORGPFX + SrcTbl.TableName;
+      ecb := DeleteFiles(TmpName + '.*');
 
-    if FileExists(FileSrc + '.adi') then
-      ecb := DeleteFiles(FileSrc + '.adi');
+      if FileExists(FileSrc + '.adi') then
+        ecb := DeleteFiles(FileSrc + '.adi');
 
-    ss := FileSrc + '.adt';
-    sd := TmpName + '.adt';
-    ecb := RenameFile(ss, sd);
-    if (ecb = True) then
-      SrcTbl.BackUps.Add(sd);
-
-    if FileExists(FileSrc + '.adm') then begin
-      ss := FileSrc + '.adm';
-      sd := TmpName + '.adm';
+      ss := FileSrc + '.adt';
+      sd := TmpName + '.adt';
       ecb := RenameFile(ss, sd);
       if (ecb = True) then
         SrcTbl.BackUps.Add(sd);
-    end;
-  end
-  else  // Удалить таблицу + Memo + index
-    ecb := DeleteFiles(FileSrc + '.ad?');
 
+      if FileExists(FileSrc + '.adm') then begin
+        ss := FileSrc + '.adm';
+        sd := TmpName + '.adm';
+        ErrAdm := RenameFile(ss, sd);
+        if (ecb = True) then
+          SrcTbl.BackUps.Add(sd);
+      end;
+    end
+    else  // Удалить таблицу + Memo + index
+      ecb := DeleteFiles(FileSrc + '.ad?');
+
+    if (ecb = True) and (ErrAdm = True) then begin
   //--- Auto-create empty table
-  SrcTbl.AdsT.AdsConnection.IsConnected := True;
-  SrcTbl.AdsT.Active := True;
-  SrcTbl.AdsT.Active := False;
+      SrcTbl.AdsT.AdsConnection.IsConnected := True;
+      SrcTbl.AdsT.Active := True;
+      SrcTbl.AdsT.Active := False;
   //---
 
-  try
-    if (ChangeAI(SrcTbl, ' INTEGER', Conn) = True) then begin
-      if (SrcTbl.GoodSpans.Count <= 0) then begin
+      try
+        if (ChangeAI(SrcTbl, ' INTEGER', Conn) = True) then begin
+          if (SrcTbl.GoodSpans.Count <= 0) then begin
         // Загрузка оптом
-        ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT * FROM "' + FileDst + '" SRC';
-        if (Length(SrcTbl.DmgdRIDs) > 0) then
-          ss := ss + ' WHERE SRC.ROWID NOT IN (' + SrcTbl.DmgdRIDs + ')';
-        Conn.Execute(ss);
-      end
-      else begin
+            ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT * FROM "' + FileDst + '" SRC';
+            if (Length(SrcTbl.DmgdRIDs) > 0) then
+              ss := ss + ' WHERE SRC.ROWID NOT IN (' + SrcTbl.DmgdRIDs + ')';
+            Conn.Execute(ss);
+          end
+          else begin
         // Загрузка интервалами хороших записей
-        for i := 0 to SrcTbl.GoodSpans.Count - 1 do begin
-          Span := SrcTbl.GoodSpans[i];
-          ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) + ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
-          Conn.Execute(ss);
+            for i := 0 to SrcTbl.GoodSpans.Count - 1 do begin
+              Span := SrcTbl.GoodSpans[i];
+              ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) + ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
+              Conn.Execute(ss);
+            end;
+          end;
+          ChangeAI(SrcTbl, ' AUTOINC', Conn, '.ad?.bak');
         end;
+        SrcTbl.ErrInfo.State := INS_GOOD;
+        SrcTbl.ErrInfo.InsErr := 0;
+        Result := True;
+      except
+        on E: EADSDatabaseError do begin
+          SrcTbl.ErrInfo.InsErr := E.ACEErrorCode;
+        end
+        else
+          SrcTbl.ErrInfo.InsErr := UE_BAD_INS;
       end;
-      ChangeAI(SrcTbl, ' AUTOINC', Conn, '.ad?.bak');
+
     end;
-    SrcTbl.ErrInfo.State := INS_GOOD;
-    SrcTbl.ErrInfo.InsErr := 0;
-    Result := True;
   except
-    on E: EADSDatabaseError do begin
-      SrcTbl.ErrInfo.InsErr := E.ACEErrorCode;
-    end
-    else
-      SrcTbl.ErrInfo.InsErr := UE_BAD_INS;
   end;
 
 end;
+
+
 
 
 // Исправить оригинал для отмеченных
@@ -905,8 +951,102 @@ begin
     BuildSpans(BadRecs, SrcTblInf);
     Result := BadRecs.Count;
 end;
-
-
-
 }
+
+
+{
+function SQL_7207_SearchEmpty(TblInf : TTableInf; iI : Integer; nMode : Integer) : string;
+var
+  i, j : Integer;
+  s : String;
+  IndInf : TIndexInf;
+
+  FI : TFieldsInf;
+begin
+  Result := 'DELETE FROM ' + TblInf.TableName + ' WHERE ' + TblInf.TableName + '.ROWID IN ';
+  s := '(SELECT ROWID FROM ' + TblInf.TableName + ' WHERE ';
+  IndInf := TblInf.IndexInf.Items[iI];
+
+  for i := 0 to IndInf.Fields.Count - 1 do begin
+    if (i > 0) then
+      s := s + ' OR ';
+    j := IndInf.IndFieldsAdr[i];
+    //s := s + EmptyFCond(IndInf.Fields.Strings[i], TFieldsInf(TblInf.FieldsInf[j]).FieldType);
+
+    FI := TblInf.FieldsInf[j];
+    s := s + EmptyFCond(IndInf.Fields.Strings[i], FI.FieldType);
+
+  end;
+  Result := Result + s + ')';
+end;
+
+
+function Fix7207(TblInf: TTableInf; QDups: TAdsQuery): Integer;
+var
+  RowFix,
+  j, i: Integer;
+  sExec: string;
+begin
+    RowFix := 0;
+    with QDups do begin
+      if Active then
+        Close;
+
+      TblInf.DupRows := TList.Create;
+
+      for i := 0 to TblInf.IndCount - 1 do begin
+          // для всех уникальных индексов таблицы
+
+          // поиск и удаление пустых [под]ключей
+        sExec := SQL_7207_SearchEmpty(TblInf, i, 1);
+        j := AdsConnection.Execute(sExec);
+        RowFix := RowFix + j;
+
+          // поиск совпадающих ключей
+        SQL.Clear;
+        sExec := UniqRepeat(TblInf, i);
+        SQL.Add(sExec);
+        VerifySQL;
+        //ExecSQL;
+        Active := True;
+        if (RecordCount > 0) then begin
+
+          // для всех групп с одинаковым значением индекса
+          // оставить одну запись из группы
+          LeaveOnlyAllowed(QDups, TblInf, i, dtmdlADS.qDst);
+
+          DelDups4Idx(TblInf);
+        end;
+
+
+          //ExecSQL;
+          //Result := Result + RowsAffected;
+      end;
+
+      // поиск некорректных AUTOINC
+      DelOtherDups(TblInf);
+
+    end;
+
+end;
+}
+
+{
+function UniqRepeat(AdsTbl : TTableInf; iI : Integer) : string;
+var
+  IndInf : TIndexInf;
+begin
+  IndInf := AdsTbl.IndexInf.Items[iI];
+  Result := 'SELECT ' + AL_SRC + '.ROWID, ''' + IntToStr(iI) + '''+' +
+    AL_DUP + '.ROWID AS ' + AL_DKEY + AL_DUPCNTF + IndInf.AlsCommaSet +
+    ' FROM ' + AdsTbl.TableName + ' ' + AL_SRC +
+    ' INNER JOIN (SELECT COUNT(*) AS ' + AL_DUPCNT + ',' + IndInf.CommaSet +
+    ' FROM ' + AdsTbl.TableName + ' GROUP BY ' + IndInf.CommaSet +
+    ' HAVING (COUNT(*) > 1) ) ' + AL_DUP +
+    ' ON ' + IndInf.EquSet;
+  Result := Result + ' ORDER BY ' + AL_DKEY;
+end;
+}
+
+
 end.

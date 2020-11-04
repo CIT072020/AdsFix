@@ -6,16 +6,6 @@ uses
   SysUtils, Classes, adsset, adscnnct, DB, adsdata, adsfunc, adstable, ace,
   kbmMemTable, ServiceProc;
 
-  //FXDP_DEL_ALL : Integer = 1;
-  //FXDP_1_ASIS  : Integer = 2;
-  //FXDP_1_MRG   : Integer = 3;
-
-
-type
-  ITest = interface
-  end;
-
-
 type
   TdtmdlADS = class(TDataModule)
     conAdsBase: TAdsConnection;
@@ -90,9 +80,11 @@ type
   protected
   public
     property DictFullPath : string read FDictPath write FDictPath;
+
+    // Создать список таблиц на базе словаря ADS
     function List4Fix(AppPars : TAppPars) : Integer; override;
     // Тестирование всех или только отмеченных
-    procedure TestSelected(ModeAll : Boolean; TMode : TestMode);
+    procedure TestSelected(ModeAll : Boolean; TMode : TestMode);override;
   published
   end;
 
@@ -103,9 +95,10 @@ type
     function TablesListFromPath(QA: TAdsQuery): Integer;
   protected
   public
+    // Создать список свбодных таблиц
     function List4Fix(AppPars : TAppPars) : Integer; override;
     // Тестирование всех или только отмеченных
-    procedure TestSelected(ModeAll : Boolean; TMode : TestMode);
+    procedure TestSelected(ModeAll : Boolean; TMode : TestMode); override;
   published
   end;
 
@@ -118,7 +111,6 @@ type
 
 //---
 function SetSysAlias(QV : TAdsQuery) : string;
-//function PrepareList(Path2Dic: string) : Integer;
 procedure SortByState(SetNow : Boolean);
 
 var
@@ -287,6 +279,7 @@ begin
       Result := UE_NO_ADS
     else
       Result := 0;
+    Conn.IsConnected := False;
   end
   else
     Result := UE_BAD_USER;
@@ -337,7 +330,7 @@ begin
 
     end;
     SrcList.EnableControls;
-
+    Conn.IsConnected := False;
 end;
 
 
@@ -367,11 +360,13 @@ begin
   end
   else
     Result := UE_BAD_PATH;
+    Conn.IsConnected := False;
 end;
 
 // Тестирование всех или только отмеченных
 procedure TFreeList.TestSelected(ModeAll : Boolean; TMode : TestMode);
 begin
+    Conn.IsConnected := False;
 end;
 
 {

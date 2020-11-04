@@ -28,16 +28,21 @@ type
   end;
 
 type
-  TFixBase = class(TObject)
+  TFixBase = class(TInterfacedObject)
+  // Класс исправления ошибок в таблицах ADS
   private
-    FPars : TAppPars;
+    FPars    : TAppPars;
     FTblList : TAdsList;
   protected
   public
+    // Параметры проверки и исправления
     property FixPars : TAppPars read FPars write FPars;
+    // Список таблиц (словарь или папка)
     property FixList : TAdsList read FTblList write FTblList;
 
+    // Заполнить и вернуть список ADS-таблиц
     function CreateFixList : TAdsList;
+
     constructor Create(FixBasePars: TAppPars);
     destructor Destroy; override;
   published

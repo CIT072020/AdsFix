@@ -240,6 +240,17 @@ end;
 
 
 
+// Протестировать выбранные
+procedure TFormMain.btnTestClick(Sender: TObject);
+begin
+  TButtonControl(Sender).Enabled := False;
+  try
+    FixBase.FixList.TestSelected(False, AppPars.TMode);
+  finally
+    TButtonControl(Sender).Enabled := True;
+  end;
+end;
+
 
 // Исправить помеченные
 procedure TFormMain.btnProcMarkClick(Sender: TObject);
@@ -282,21 +293,6 @@ begin
     TButtonControl(Sender).Enabled := True;
   end;
 end;
-
-
-
-
-// Протестировать выбранные
-procedure TFormMain.btnTestClick(Sender: TObject);
-begin
-  TButtonControl(Sender).Enabled := False;
-  try
-    FixBase.FixList.TestSelected(False, AppPars.TMode);
-  finally
-    TButtonControl(Sender).Enabled := True;
-  end;
-end;
-
 
 // Установка/сброс режима автотестирования
 procedure TFormMain.chkAutoTestClick(Sender: TObject);
