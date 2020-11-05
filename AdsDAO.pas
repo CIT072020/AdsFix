@@ -40,6 +40,11 @@ type
   end;
 
 //------------------
+
+const
+  // сортировка списка таблиц
+  IDX_SRC     : String = 'OnState';
+
 type
 
   // Список исходных ADS-таблиц для проверки и восстановления
@@ -102,12 +107,6 @@ type
   published
   end;
 
-  // описание записи в наборе дубликатов
-  TDupRow = class
-    RowID : string;
-    FillPcnt : Integer;
-    DelRow : Boolean;
-  end;
 
 //---
 function SetSysAlias(QV : TAdsQuery) : string;

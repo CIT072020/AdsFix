@@ -19,7 +19,7 @@ const
   FWT_BIN  : Integer = 5;
 
 type
-  TFixErrUniq = class(TInterfacedObject)
+  TFixUniq = class(TInterfacedObject)
   // Класс исправления ошибок уникальности индексов
   //
   // в таблицах ADS
@@ -30,11 +30,14 @@ type
     FQDups    : TAdsQuery;
     FDelEmps  : Integer;
     FDelDups  : Integer;
+    FIDs4Del  : string;
 
     // Поиск пустых значений [под]ключей среди уникадьных индексов
-    function SQL_7207_SearchEmpty(IndInf : TIndexInf) : string;
+    function SearchEmptyAnyAll(IndInf : TIndexInf; BoolOp : string = ' OR ') : string;
+    function FindDelEmpty(IndInf: TIndexInf; QTmp: TAdsQuery; DelNow: Boolean = True): integer;
     // Поиск ROWID дубликатов ключей среди уникадьных индексов
     function UniqRepeat(iI : Integer) : string;
+    procedure LeaveOnlyAllowed(Q: TAdsQuery; iI: Integer; Q1F: TAdsQuery);
   protected
   public
     // Параметры проверки и исправления
@@ -45,6 +48,8 @@ type
     property TmpConn: TAdsConnection read FTmpConn write FTmpConn;
     // Дубликаты по GROUP BY
     property QDups: TAdsQuery read FQDups write FQDups;
+    // Список
+    property RowIDs4Del : string read FIDs4Del write FIDs4Del;
 
     // Исправление ошибок 7200, 7207
     function Fix7207 : Integer;
@@ -74,8 +79,41 @@ uses
   Math,
   uIFixDmgd;
 
+// Сткока условия [НЕ]пустого поля для SQL-команды
+function EmptyFCond(FieldName: String; FieldType: Integer; NotEmpty: Boolean = False): string;
+var
+  sT : string;
+begin
+  sT := '';
+  Result := '(' + FieldName + ' is NULL)';
 
-constructor TFixErrUniq.Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection);
+  if  (FieldType in ADS_NUMBERS) then
+    sT := ' OR (' + FieldName + ' <= 0)'
+//  else if (FieldType in ADS_STRINGS) then
+//    Result := Result + ' OR EMPTY(' + FieldName + ')'
+  else if (FieldType in ADS_STRINGS) or (FieldType in ADS_DATES) then
+    sT := ' OR EMPTY(' + FieldName + ')';
+
+  if ( Length(sT) > 0 ) then
+  // если два условия
+    Result := '(' + Result + sT + ')';
+
+  if (NotEmpty = True) then
+  // Нужно НЕпусто
+    Result := '( NOT ' + Result + ' )';
+end;
+
+// Удалить строки по списку ROWID
+function DelByRowIds(TName, List4Del : string; Cn : TAdsConnection) : Integer;
+var
+  s : string;
+begin
+  s := Format('DELETE FROM %s WHERE ROWID IN (%s)', [TName, List4Del]);
+  Result := Cn.Execute(s);
+end;
+
+
+constructor TFixUniq.Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection);
 begin
   SrcTbl  := TI;
   FixPars := Pars;
@@ -85,68 +123,72 @@ begin
   QDups.AdsConnection := Cn;
 end;
 
-destructor TFixErrUniq.Destroy;
+destructor TFixUniq.Destroy;
 begin
   inherited Destroy;
 end;
 
-
-
-
-
-function CopyOneFile(const Src, Dst: string): Integer;
+procedure TFixUniq.SetList4Del(NewIDs : string);
 begin
-  Result := 0;
-  try
-    CopyFileEx(Src, Dst, True, True, nil);
-  except
-    Result := 1;
+  if ( Length(FIDs4Del
+
+end;
+
+// SQL-команда поиска записей с любым/всеми пустыми [под]ключами уникального индекса
+function TFixUniq.SearchEmptyAnyAll(IndInf : TIndexInf; BoolOp : string = ' OR ') : string;
+var
+  i, j : Integer;
+  s : String;
+begin
+  s := '';
+  for i := 0 to IndInf.Fields.Count - 1 do begin
+    if (i > 0) then
+      s := s + BoolOp;
+    j := IndInf.IndFieldsAdr[i];
+    s := s + EmptyFCond(IndInf.Fields.Strings[i], TFieldsInf(SrcTbl.FieldsInf[j]).FieldType);
   end;
+  Result := Format('SELECT ROWID FROM %s WHERE %s', [SrcTbl.TableName, s]);
 end;
 
-function EmptyFCond(FieldName : String; FieldType : Integer; IsNOT : Boolean = False) : string;
+// поиск и удаление пустых [под]ключей
+function TFixUniq.FindDelEmpty(IndInf: TIndexInf; QTmp: TAdsQuery; DelNow: Boolean = True): integer;
 var
-  bInBrck : Boolean;
+  nDel, i: Integer;
+  sID, sExec: string;
+  RowDel: TRow4Del;
 begin
-  bInBrck := True;
-  Result := '(' + FieldName + ' is NULL)';
-  if  (FieldType in ADS_NUMBERS) then
-    Result := Result + ' OR (' + FieldName + ' <= 0)'
-//  else if (FieldType in ADS_STRINGS) then
-//    Result := Result + ' OR EMPTY(' + FieldName + ')'
-  else if (FieldType in ADS_STRINGS) or (FieldType in ADS_DATES) then
-    Result := Result + ' OR EMPTY(' + FieldName + ')'
-  else
-    bInBrck := False;
-  if (bInBrck = True) then
-    Result := '(' + Result + ')';
-  if (IsNOT = True) then
-    Result := '( NOT ' + Result + ' )';
+  nDel := 0;
+  sExec := SearchEmptyAnyAll(IndInf);
+  QTmp.SQL.Clear;
+  QTmp.SQL.Add(sExec);
+  QTmp.Active := True;
+
+  if (QTmp.RecordCount > 0) then begin
+    QTmp.First;
+    sExec := '';
+    for i := 0 to (QTmp.RecordCount - 1) do begin
+      sID := QTmp.Fields[0].Value;
+      if (SrcTbl.ErrInfo.Rows4Del.IndexOf(sID) < 0) then begin
+        nDel := nDel + 1;
+        if (nDel > 1) then
+          sExec := sExec + ',';
+
+        RowDel := TRow4Del.Create;
+        RowDel.RowID := sID;
+        RowDel.DelRow := True;
+        RowDel.Reason := RSN_EMP_KEY;
+        SrcTbl.ErrInfo.Rows4Del.AddObject(sID, RowDel);
+        sExec := sExec + '''' + sID + '''';
+      end;
+      QTmp.Next;
+    end;
+    if (nDel > 0) then begin
+      if (DelNow = True) then
+        nDel := DelByRowIds(SrcTbl.TableName, sExec, TmpConn);
+    end;
+  end;
+  Result := nDel;
 end;
-
-
-function FieldInIndex(FieldName : String) : Boolean;
-begin
-  Result := False;
-end;
-
-
-function DelDups4Idx(AdsTbl : TTableInf) : Integer;
-var
-  nRec : Integer;
-  s : string;
-begin
-  s := 'DELETE FROM ' + AdsTbl.TableName + ' WHERE ' + AdsTbl.TableName +
-    '.ROWID IN (' + AdsTbl.List4Del + ')';
-  nRec := dtmdlADS.cnABTmp.Execute(s);
-  Result := nRec;
-end;
-
-
-
-
-
-
 
 // вес одного заполненного поля
 function FieldWeight(QF: TAdsQuery; FieldName: string; FieldType: integer): integer;
@@ -167,7 +209,7 @@ begin
   end;
 end;
 
-
+// Расчет веса одной строки на основе весов заполненных полей
 function RowFill(AdsTbl: TTableInf; RowID: string; Q1F: TAdsQuery): integer;
 var
   FT, RowWeight, i: integer;
@@ -178,42 +220,45 @@ begin
   RowWeight := 0;
   Q1F.Active := False;
 
-  for i := 0 to AdsTbl.FieldsInf.Count - 1 do begin
-    if (i > 0) then
-      s := s + ' OR ';
-    sField := TFieldsInf(AdsTbl.FieldsInf[i]).Name;
-    FT := TFieldsInf(AdsTbl.FieldsInf[i]).FieldType;
-    sEmpCond := EmptyFCond(sField, FT, True);
-    s := 'SELECT ' + sField + ' FROM ' + AdsTbl.TableName + s4All + sEmpCond;
-    Q1F.SQL.Clear;
-    Q1F.SQL.Add(s);
-    Q1F.Active := True;
-    if (Q1F.RecordCount > 0) then
-      RowWeight := RowWeight + FieldWeight(Q1F, sField, FT);
-
+  try
+    for i := 0 to AdsTbl.FieldsInf.Count - 1 do begin
+      if (i > 0) then
+        s := s + ' OR ';
+      sField := TFieldsInf(AdsTbl.FieldsInf[i]).Name;
+      FT := TFieldsInf(AdsTbl.FieldsInf[i]).FieldType;
+      sEmpCond := EmptyFCond(sField, FT, True);
+      s := 'SELECT ' + sField + ' FROM ' + AdsTbl.TableName + s4All + sEmpCond;
+      Q1F.SQL.Clear;
+      Q1F.SQL.Add(s);
+      Q1F.Active := True;
+      if (Q1F.RecordCount > 0) then
+        RowWeight := RowWeight + FieldWeight(Q1F, sField, FT);
+    end;
+  except
   end;
   Result := RowWeight;
 end;
 
-
-
-procedure MarkAll4Del(Q: TAdsQuery; AdsTbl: TTableInf);
+function MarkAll4Del(Q: TAdsQuery; AdsTbl: TTableInf) : string;
 var
   i: Integer;
+  sID,
   s: string;
-  RowInf: TDupRow;
+  RowDel : TRow4Del;
 begin
   Q.First;
   i := 0;
   s := '';
   while not Q.Eof do begin
-    RowInf := TDupRow.Create;
-    RowInf.DelRow := True;
-    if (i > 0) then begin
+    sID := Q.FieldValues['ROWID'];
+    RowDel := TRow4Del.Create;
+    RowDel.RowID := sID;
+    RowDel.DelRow := True;
+    RowDel.Reason := RSN_DUP_KEY;
+    SrcTbl.ErrInfo.Rows4Del.AddObject(sID, RowDel);
+    if (i > 0) then
       s := s + ',';
-    end;
-    s := s + '''' + Q.FieldValues['ROWID'] + '''';
-    AdsTbl.DupRows.Add(RowInf);
+    s := s + '''' + sID + '''';
     i := i + 1;
     Q.Next;
   end;
@@ -222,8 +267,9 @@ begin
 end;
 
 
-// оставить не больше одной записи из группы
-procedure LeaveOnlyAllowed(Q: TAdsQuery; AdsTbl: TTableInf; iI: Integer; Q1F : TAdsQuery);
+// оставить не больше одной записи из группы дубликатов
+// в зависимости от режима удаления
+procedure TFixUniq.LeaveOnlyAllowed(Q: TAdsQuery; iI: Integer; Q1F: TAdsQuery);
 var
   i, iMax,
   iDel,
@@ -234,8 +280,8 @@ var
   RowInf: TDupRow;
 begin
 
-  if (AppPars.DelDupMode = TDelDupMode(DDup_ALL)) then begin
-    MarkAll4Del(Q, AdsTbl);
+  if (FixPars.DelDupMode = TDelDupMode(DDup_ALL)) then begin
+    RowIDs4Del := MarkAll4Del(Q, SrcTbl);
     Exit;
   end;
 
@@ -249,19 +295,19 @@ begin
     for i := 1 to iMax do begin
       RowInf := TDupRow.Create;
       RowInf.RowID := Q.FieldValues['ROWID'];
-      RowInf.FillPcnt := RowFill(AdsTbl, RowInf.RowID, Q1F);
+      RowInf.FillPcnt := RowFill(SrcTbl, RowInf.RowID, Q1F);
       if (RowInf.FillPcnt > FillMax) then begin
         jLeave := j;
         FillMax := RowInf.FillPcnt;
       end;
-      AdsTbl.DupRows.Add(RowInf);
+      SrcTbl.DupRows.Add(RowInf);
       j := j + 1;
       Q.Next;
     end;
 
     //Q.GotoBookmark(BegGr);
     for i := j - iMax to j - 1 do begin
-      RowInf := AdsTbl.DupRows[i];
+      RowInf := SrcTbl.DupRows[i];
 
       if (i = jLeave) then begin
         RowInf.DelRow := False;
@@ -277,8 +323,7 @@ begin
     end;
 
   end;
-  AdsTbl.List4Del := s;
-  AdsTbl.TotalDel := iDel;
+  RowIDs4Del := s;
 end;
 
 
@@ -288,15 +333,6 @@ procedure DelOtherDups(AdsTbl : TTableInf);
 begin
 
 end;
-
-
-
-
-
-
-
-
-
 
 
 
@@ -310,7 +346,7 @@ end;
 //    ) D
 //    ON (S.TYPEOBJ=D.TYPEOBJ) AND (S.ID=D.ID) AND (S.DATES=D.DATES) AND (S.POKAZ=D.POKAZ)
 //    ORDER BY DUPGKEY'
-function TFixErrUniq.UniqRepeat(iI : Integer) : string;
+function TFixUniq.UniqRepeat(iI : Integer) : string;
 var
   IndInf : TIndexInf;
 begin
@@ -325,79 +361,55 @@ begin
     ' ON %s ORDER BY %s',                                [IndInf.EquSet, AL_DKEY]);
 end;
 
-// SQL-команда удаления записей с пустыми [под]ключами уникального индекса
-function TFixErrUniq.SQL_7207_SearchEmpty(IndInf : TIndexInf) : string;
-var
-  i, j : Integer;
-  s : String;
-begin
-  s := '';
 
-  for i := 0 to IndInf.Fields.Count - 1 do begin
-    if (i > 0) then
-      s := s + ' OR ';
-    j := IndInf.IndFieldsAdr[i];
-    s := s + EmptyFCond(IndInf.Fields.Strings[i], TFieldsInf(SrcTbl.FieldsInf[j]).FieldType);
-  end;
-  Result := Format(
-    'DELETE FROM %s WHERE %s.ROWID IN (SELECT ROWID FROM %s WHERE %s)'
-    ,[SrcTbl.TableName, SrcTbl.TableName, SrcTbl.TableName, s]
-    );
-end;
-
-function TFixErrUniq.Fix7207: Integer;
+// Ошибки уникальных ключей
+function TFixUniq.Fix7207: Integer;
 var
   RowFix, j, i: Integer;
   sExec: string;
+  Q : TAdsQuery;
 begin
   Result := 0;
   FDelEmps := 0;
   FDelDups := 0;
+  Q := TAdsQuery.Create(SrcTbl.AdsT.Owner);
+  Q.AdsConnection := TmpConn;
   try
-    with QDups do begin
-
-      SrcTbl.DupRows := TList.Create;
-
       for i := 0 to SrcTbl.IndCount - 1 do begin
       // для всех уникальных индексов таблицы
 
-        // поиск и удаление пустых [под]ключей
-        sExec := SQL_7207_SearchEmpty(SrcTbl.IndexInf.Items[i]);
-        j := TmpConn.Execute(sExec);
-        FDelEmps := FDelEmps + j;
+        // поиск и удаление строк с пустыми [под]ключами
+
+        //sExec := SQL_7207_SearchEmpty(SrcTbl.IndexInf.Items[i]);
+        //FDelEmps := FDelEmps + TmpConn.Execute(sExec);
+
+        FDelEmps := FDelEmps + FindDelEmpty(SrcTbl.IndexInf.Items[i], Q);
 
         // поиск совпадающих ключей
-        SQL.Clear;
+        QDups.SQL.Clear;
         sExec := UniqRepeat(i);
-        SQL.Add(sExec);
-        VerifySQL;
-        //ExecSQL;
-        Active := True;
-        if (RecordCount > 0) then begin
+        QDups.SQL.Add(sExec);
+        QDups.VerifySQL;
+        QDups.Active := True;
+        if (QDups.RecordCount > 0) then begin
           // для всех групп с одинаковым значением индекса
           // оставить одну запись из группы
-          LeaveOnlyAllowed(QDups, SrcTbl, i, dtmdlADS.qDst);
-          FDelDups := FDelDups + DelDups4Idx(SrcTbl);
+          LeaveOnlyAllowed(QDups, SrcTbl, i, Q);
+          FDelDups := FDelDups + DelDups4Idx(SrcTbl.TableName, SrcTbl.List4Del, TmpConn);
         end;
       end;
-
       // поиск некорректных AUTOINC
       DelOtherDups(SrcTbl);
-
-    end;
   except
   end;
   Result := FDelEmps + FDelDups;
 end;
 
-
-
-
 // вызов метода для кода ошибки
 function TblErrorController(SrcTbl: TTableInf): Integer;
 var
   FixState : Integer;
-  FixDupU  : TFixErrUniq;
+  FixDupU  : TFixUniq;
 begin
   try
     if (dtmdlADS.cnABTmp.IsConnected) then
@@ -417,7 +429,7 @@ begin
     case SrcTbl.ErrInfo.ErrClass of
       7008, 7207:
         begin
-            FixDupU := TFixErrUniq.Create(SrcTbl, AppPars, dtmdlADS.cnABTmp);
+            FixDupU := TFixUniq.Create(SrcTbl, AppPars, dtmdlADS.cnABTmp);
             SrcTbl.RowsFixed := FixDupU.Fix7207;
         end;
       7200:
@@ -428,7 +440,7 @@ begin
             FixState := FIX_NOTHG;
           end
           else begin
-            FixDupU := TFixErrUniq.Create(SrcTbl, AppPars, dtmdlADS.cnABTmp);
+            FixDupU := TFixUniq.Create(SrcTbl, AppPars, dtmdlADS.cnABTmp);
             SrcTbl.RowsFixed := FixDupU.Fix7207;
           end;
         end;
@@ -451,6 +463,17 @@ begin
   Result := SrcTbl.RowsFixed;
 end;
 
+
+// Скопировать группу файлов по шаблону имени
+function CopyOneFile(const Src, Dst: string): Integer;
+begin
+  Result := 0;
+  try
+    CopyFileEx(Src, Dst, True, True, nil);
+  except
+    Result := 1;
+  end;
+end;
 
 // Копия оригинала и освобождение таблицы
 function PrepTable(P2Src, P2TMP : string; SrcTbl: TTableInf): Integer;
@@ -1048,5 +1071,26 @@ begin
 end;
 }
 
+// SQL-команда удаления записей с пустыми [под]ключами уникального индекса
+{
+function TFixUniq.SQL_7207_SearchEmpty(IndInf : TIndexInf) : string;
+var
+  i, j : Integer;
+  s : String;
+begin
+  s := '';
+
+  for i := 0 to IndInf.Fields.Count - 1 do begin
+    if (i > 0) then
+      s := s + ' OR ';
+    j := IndInf.IndFieldsAdr[i];
+    s := s + EmptyFCond(IndInf.Fields.Strings[i], TFieldsInf(SrcTbl.FieldsInf[j]).FieldType);
+  end;
+  Result := Format(
+    'DELETE FROM %s WHERE %s.ROWID IN (SELECT ROWID FROM %s WHERE %s)'
+    ,[SrcTbl.TableName, SrcTbl.TableName, SrcTbl.TableName, s]
+    );
+end;
+}
 
 end.

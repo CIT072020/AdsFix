@@ -16,7 +16,6 @@ type
     TypeSQL   : string;
   end;
 
-type
   // описание одного индекса
   TIndexInf = class
     Options: Integer;
@@ -27,6 +26,22 @@ type
     EquSet : string;
     IndFieldsAdr: array of integer;
   end;
+
+  // ќписание планируемой к удалению строки
+  TRow4Del = class
+    RowID : string;
+    FillPcnt : Integer;
+    DelRow : Boolean;
+    Reason : Integer;
+  end;
+
+  // описание записи в наборе дубликатов
+  TDupRow = class
+    RowID : string;
+    FillPcnt : Integer;
+    DelRow : Boolean;
+  end;
+
 
 type
   // Info по ошибке
@@ -43,6 +58,8 @@ type
     FixErr    : Integer;
     //  од завершени€ INSERT таблицы
     InsErr    : Integer;
+
+    Rows4Del : TStringList;
   end;
 
 type
@@ -100,8 +117,8 @@ type
 
     ErrInfo  : TErrInfo;
 
-    DupRows   : TList;
-    List4Del  : String;
+    T_DupRows   : TList;
+    T_List4Del  : String;
 
     DmgdRIDs  : string;
     // список плохих записей
@@ -177,6 +194,7 @@ begin
   NeedBackUp := True;
 
   ErrInfo   := TErrInfo.Create;
+  ErrInfo.Rows4Del := TStringList.Create; 
   BadRecs   := TList.Create;
   GoodSpans := TList.Create;
 end;
@@ -427,8 +445,8 @@ end;
 //  оличество записей в таблице (SQL)
 function RecsBySQL(Q: TAdsQuery; TName: string): Integer;
 begin
+  Result := 0;
   try
-    Result := 0;
     Q.Close;
     Q.SQL.Clear;
     Q.SQL.Text := 'SELECT COUNT(*) FROM ' + TName;
@@ -441,6 +459,8 @@ begin
   except
   end;
 end;
+
+
 
 
 // тестирование одной таблицы на ошибки

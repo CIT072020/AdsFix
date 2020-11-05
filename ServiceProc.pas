@@ -63,8 +63,9 @@ const
   INS_GOOD    : Integer = 64;
   INS_ERRORS  : Integer = 128;
 
-  // сортировка списка таблиц
-  IDX_SRC     : String = 'OnState';
+  // Причины удаления строк
+  RSN_EMP_KEY = 1;
+  RSN_DUP_KEY = 2;
 
   // алиасы для SQL-запросов поиска дубликатов
   AL_SRC     : string = 'S';
