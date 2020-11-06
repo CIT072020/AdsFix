@@ -117,8 +117,8 @@ type
 
     ErrInfo  : TErrInfo;
 
-    T_DupRows   : TList;
-    T_List4Del  : String;
+    //T_DupRows   : TList;
+    //T_List4Del  : String;
 
     DmgdRIDs  : string;
     // список плохих записей

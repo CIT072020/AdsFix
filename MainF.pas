@@ -25,9 +25,6 @@ type
     Splitter1: TSplitter;
     Splitter2: TSplitter;
     Panel5: TPanel;
-    BoxProc: TGroupBox;
-    TabN: TLabel;
-    Prog: TProgressBar;
     cbbPath2Src: TDBComboBoxEh;
     dbgAllT: TDBGridEh;
     lblPath2Tmp: TLabel;
@@ -37,10 +34,13 @@ type
     btnTest: TButton;
     rgDelDupMode: TRadioGroup;
     btnTblList: TBitBtn;
-    chkAutoTest: TCheckBox;
     rgTestMode: TRadioGroup;
     btnFixAll: TButton;
+    grpBoxProc: TGroupBox;
+    lblTabN: TLabel;
+    pbProg: TProgressBar;
     btnFullFixOne: TButton;
+    chkAutoTest: TCheckBox;
     procedure ChangePath2TmpClick(Sender: TObject; var Handled: Boolean);
     procedure btnTblListClick(Sender: TObject);
     procedure btnDelOrigClick(Sender: TObject);

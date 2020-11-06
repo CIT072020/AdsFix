@@ -21,7 +21,6 @@ const
 type
   TFixUniq = class(TInterfacedObject)
   // Класс исправления ошибок уникальности индексов
-  //
   // в таблицах ADS
   private
     FPars     : TAppPars;
@@ -32,12 +31,25 @@ type
     FDelDups  : Integer;
     FIDs4Del  : string;
 
-    // Поиск пустых значений [под]ключей среди уникадьных индексов
+    FBadRows  : TStringList;
+
+    // SQL-запрос поиска пустых значений [под]ключей среди уникадьных индексов
     function SearchEmptyAnyAll(IndInf : TIndexInf; BoolOp : string = ' OR ') : string;
+
+    // Поиск [и удаление]пустых значений [под]ключей среди уникадьных индексов
     function FindDelEmpty(IndInf: TIndexInf; QTmp: TAdsQuery; DelNow: Boolean = True): integer;
+
+    //
+    function NewRow4Del(Q: TAdsQuery; Dst : TStringList; var Why: Integer): string;
+
     // Поиск ROWID дубликатов ключей среди уникадьных индексов
     function UniqRepeat(iI : Integer) : string;
-    procedure LeaveOnlyAllowed(Q: TAdsQuery; iI: Integer; Q1F: TAdsQuery);
+
+    // Отметить все для удаления
+    function MarkAll4Del(Q : TAdsQuery; DelNow: Boolean): integer;
+
+    // Перебор дубликатов, выбор и формирование списка для удаления
+    function LeaveOnlyAllowed(Q: TAdsQuery; Q1F: TAdsQuery) : integer;
   protected
   public
     // Параметры проверки и исправления
@@ -103,6 +115,22 @@ begin
     Result := '( NOT ' + Result + ' )';
 end;
 
+// Список RowID
+function RowIDs2CommList(Rows2Del: TStringList) : string;
+var
+  i : Integer;
+  s : String;
+begin
+  s := '';
+  for i := 0 to Rows2Del.Count - 1 do begin
+    if (i > 0) then
+      s := s + ',';
+    s := s + Rows2Del[i];
+  end;
+  Result := s;
+end;
+
+
 // Удалить строки по списку ROWID
 function DelByRowIds(TName, List4Del : string; Cn : TAdsConnection) : Integer;
 var
@@ -121,6 +149,7 @@ begin
 
   QDups := TAdsQuery.Create(SrcTbl.AdsT.Owner);
   QDups.AdsConnection := Cn;
+  FBadRows := TStringList.Create;
 end;
 
 destructor TFixUniq.Destroy;
@@ -128,10 +157,35 @@ begin
   inherited Destroy;
 end;
 
-procedure TFixUniq.SetList4Del(NewIDs : string);
+{
+procedure TFixUniq.SetList4Del(NewIDs: string);
 begin
-  if ( Length(FIDs4Del
+  if (Length(NewDis) = 0) then
+    FIDs4Del := ''
+  else begin
+    if (Length(FIDs4Del) > 0) then
+      NewIDs := ',' + NewDis;
+    FIDs4Del := FIDs4Del + NewIDs;
+  end;
+end;
+}
 
+// Добавить в список
+function TFixUniq.NewRow4Del(Q: TAdsQuery; Dst : TStringList; var Why: Integer): string;
+var
+  RowDel : TRow4Del;
+begin
+  Result := Q.FieldValues['ROWID'];
+  if (Dst.IndexOf(Result) < 0) then begin
+    RowDel := TRow4Del.Create;
+    RowDel.RowID := Result;
+    RowDel.DelRow := True;
+    RowDel.Reason := Why;
+    Dst.AddObject(Result, RowDel);
+    Why := Dst.Count - 1;
+  end
+  else
+    Why := -1;
 end;
 
 // SQL-команда поиска записей с любым/всеми пустыми [под]ключами уникального индекса
@@ -153,6 +207,7 @@ end;
 // поиск и удаление пустых [под]ключей
 function TFixUniq.FindDelEmpty(IndInf: TIndexInf; QTmp: TAdsQuery; DelNow: Boolean = True): integer;
 var
+  iNew,
   nDel, i: Integer;
   sID, sExec: string;
   RowDel: TRow4Del;
@@ -167,17 +222,12 @@ begin
     QTmp.First;
     sExec := '';
     for i := 0 to (QTmp.RecordCount - 1) do begin
-      sID := QTmp.Fields[0].Value;
-      if (SrcTbl.ErrInfo.Rows4Del.IndexOf(sID) < 0) then begin
+      iNew := RSN_EMP_KEY;
+      sID := NewRow4Del(QTmp, FBadRows, iNew);
+      if (iNew >= 0) then begin
         nDel := nDel + 1;
         if (nDel > 1) then
           sExec := sExec + ',';
-
-        RowDel := TRow4Del.Create;
-        RowDel.RowID := sID;
-        RowDel.DelRow := True;
-        RowDel.Reason := RSN_EMP_KEY;
-        SrcTbl.ErrInfo.Rows4Del.AddObject(sID, RowDel);
         sExec := sExec + '''' + sID + '''';
       end;
       QTmp.Next;
@@ -189,6 +239,32 @@ begin
   end;
   Result := nDel;
 end;
+
+// SQL-запрос создания списка ROWID дубликатов с пустыми [под]ключами уникального индекса
+// ---
+// SELECT S.ROWID, '0'+D.ROWID AS DUPGKEY,D.DUPCNT,S.TYPEOBJ,S.ID,S.DATES,S.POKAZ
+//   FROM BaseTextProp S INNER JOIN
+//   (
+//     SELECT COUNT(*) AS DUPCNT,TYPEOBJ,ID,DATES,POKAZ
+//       FROM BaseTextProp GROUP BY TYPEOBJ,ID,DATES,POKAZ HAVING (COUNT(*) > 1)
+//    ) D
+//    ON (S.TYPEOBJ=D.TYPEOBJ) AND (S.ID=D.ID) AND (S.DATES=D.DATES) AND (S.POKAZ=D.POKAZ)
+//    ORDER BY DUPGKEY'
+function TFixUniq.UniqRepeat(iI : Integer) : string;
+var
+  IndInf : TIndexInf;
+begin
+  IndInf := SrcTbl.IndexInf.Items[iI];
+  Result := Format(
+    'SELECT %s.ROWID, ''%d'' + %s.ROWID AS %s%s %s',     [AL_SRC, iI, AL_DUP, AL_DKEY, AL_DUPCNTF, IndInf.AlsCommaSet]);
+  Result := Result + Format(
+    ' FROM %s %s INNER JOIN (SELECT COUNT(*) AS %s, %s', [SrcTbl.TableName, AL_SRC, AL_DUPCNT, IndInf.CommaSet]);
+  Result := Result + Format(
+    ' FROM %s GROUP BY %s HAVING (COUNT(*) > 1) ) %s',   [SrcTbl.TableName, IndInf.CommaSet, AL_DUP]);
+  Result := Result + Format(
+    ' ON %s ORDER BY %s',                                [IndInf.EquSet, AL_DKEY]);
+end;
+
 
 // вес одного заполненного поля
 function FieldWeight(QF: TAdsQuery; FieldName: string; FieldType: integer): integer;
@@ -239,79 +315,89 @@ begin
   Result := RowWeight;
 end;
 
-function MarkAll4Del(Q: TAdsQuery; AdsTbl: TTableInf) : string;
+// Отметить все для удаления
+function TFixUniq.MarkAll4Del(Q : TAdsQuery; DelNow: Boolean): integer;
 var
-  i: Integer;
-  sID,
-  s: string;
-  RowDel : TRow4Del;
+  iNew, i: Integer;
+  sID, s: string;
 begin
   Q.First;
   i := 0;
-  s := '';
-  while not Q.Eof do begin
-    sID := Q.FieldValues['ROWID'];
-    RowDel := TRow4Del.Create;
-    RowDel.RowID := sID;
-    RowDel.DelRow := True;
-    RowDel.Reason := RSN_DUP_KEY;
-    SrcTbl.ErrInfo.Rows4Del.AddObject(sID, RowDel);
-    if (i > 0) then
-      s := s + ',';
-    s := s + '''' + sID + '''';
-    i := i + 1;
-    Q.Next;
+  try
+    s := '';
+    while not Q.Eof do begin
+      iNew := RSN_DUP_KEY;
+      sID := NewRow4Del(Q, FBadRows, iNew);
+      if (iNew >= 0) then begin
+        if (i > 0) then
+          s := s + ',';
+        s := s + '''' + sID + '''';
+        i := i + 1;
+      end;
+      Q.Next;
+    end;
+    if (i > 0) then begin
+      if (DelNow = True) then
+        i := DelByRowIds(SrcTbl.TableName, s, TmpConn);
+    end;
+  finally
+    Result := i;
   end;
-  AdsTbl.List4Del := s;
-  AdsTbl.TotalDel := Q.RecordCount;
 end;
-
 
 // оставить не больше одной записи из группы дубликатов
 // в зависимости от режима удаления
-procedure TFixUniq.LeaveOnlyAllowed(Q: TAdsQuery; iI: Integer; Q1F: TAdsQuery);
+function TFixUniq.LeaveOnlyAllowed(Q: TAdsQuery; Q1F: TAdsQuery): integer;
 var
-  i, iMax,
-  iDel,
-  FillMax,
-  j,
-  jLeave : Integer;
-  s: string;
-  RowInf: TDupRow;
+  DelNow: Boolean;
+  i, iMax, iDel, FillMax, iNew, RWeight, j, jMax, jStart: Integer;
+  sID, s: string;
+  RowInf: TRow4Del;
 begin
-
+  if (FixPars.DelDupMode = TDelDupMode(DDup_USel)) then
+  // Пользователь сам определится
+    DelNow := False
+  else
+    DelNow := True;
+  Result := 0;
   if (FixPars.DelDupMode = TDelDupMode(DDup_ALL)) then begin
-    RowIDs4Del := MarkAll4Del(Q, SrcTbl);
+    Result := MarkAll4Del(Q, DelNow);
     Exit;
   end;
 
   j := 0;
-  iDel    := 0;
+  iDel := 0;
   Q.First;
   while not Q.Eof do begin
     FillMax := 0;
-    jLeave  := -1;
+    // если добавим, с него и начнем
+    jStart := FBadRows.Count;
+    // дубликатов в группе
     iMax := Q.FieldValues[AL_DUPCNT];
     for i := 1 to iMax do begin
-      RowInf := TDupRow.Create;
-      RowInf.RowID := Q.FieldValues['ROWID'];
-      RowInf.FillPcnt := RowFill(SrcTbl, RowInf.RowID, Q1F);
-      if (RowInf.FillPcnt > FillMax) then begin
-        jLeave := j;
-        FillMax := RowInf.FillPcnt;
+    // только для текущего набора подключей
+      iNew := RSN_DUP_KEY;
+      sID := NewRow4Del(Q, FBadRows, iNew);
+      if (iNew >= 0) then begin
+        RWeight := RowFill(SrcTbl, sID, Q1F);
+        TRow4Del(FBadRows.Objects[iNew]).FillPcnt := RWeight;
+        if (RWeight >= FillMax) then begin
+         // запомним максивальное заполнение строки в группе
+          jMax := iNew;
+          FillMax := RWeight;
+        end;
       end;
-      SrcTbl.DupRows.Add(RowInf);
       j := j + 1;
       Q.Next;
     end;
 
-    //Q.GotoBookmark(BegGr);
-    for i := j - iMax to j - 1 do begin
-      RowInf := SrcTbl.DupRows[i];
+    // проход по вновь добавленным
+    for i := jStart to FBadRows.Count - 1 do begin
+      RowInf := TRow4Del(FBadRows.Objects[i]);
 
-      if (i = jLeave) then begin
-        RowInf.DelRow := False;
-      end
+      if (i = jMax) then
+      // с максимальным весом - оставим
+        RowInf.DelRow := False
       else begin
         RowInf.DelRow := True;
         if (iDel > 0) then begin
@@ -323,44 +409,18 @@ begin
     end;
 
   end;
-  RowIDs4Del := s;
+  if (DelNow = True) then
+    Result := DelByRowIds(SrcTbl.TableName, s, TmpConn)
+  else
+    Result := iDel;
+
 end;
 
-
-
-// оставить не больше одной записи из группы
+// поиск некорректных AUTOINC
 procedure DelOtherDups(AdsTbl : TTableInf);
 begin
 
 end;
-
-
-
-// SQL-запрос создания списка ROWID дубликатов с пустыми [под]ключами уникального индекса
-// ---
-// SELECT S.ROWID, '0'+D.ROWID AS DUPGKEY,D.DUPCNT,S.TYPEOBJ,S.ID,S.DATES,S.POKAZ
-//   FROM BaseTextProp S INNER JOIN
-//   (
-//     SELECT COUNT(*) AS DUPCNT,TYPEOBJ,ID,DATES,POKAZ
-//       FROM BaseTextProp GROUP BY TYPEOBJ,ID,DATES,POKAZ HAVING (COUNT(*) > 1)
-//    ) D
-//    ON (S.TYPEOBJ=D.TYPEOBJ) AND (S.ID=D.ID) AND (S.DATES=D.DATES) AND (S.POKAZ=D.POKAZ)
-//    ORDER BY DUPGKEY'
-function TFixUniq.UniqRepeat(iI : Integer) : string;
-var
-  IndInf : TIndexInf;
-begin
-  IndInf := SrcTbl.IndexInf.Items[iI];
-  Result := Format(
-    'SELECT %s.ROWID, ''%d'' + %s.ROWID AS %s%s %s',     [AL_SRC, iI, AL_DUP, AL_DKEY, AL_DUPCNTF, IndInf.AlsCommaSet]);
-  Result := Result + Format(
-    ' FROM %s %s INNER JOIN (SELECT COUNT(*) AS %s, %s', [SrcTbl.TableName, AL_SRC, AL_DUPCNT, IndInf.CommaSet]);
-  Result := Result + Format(
-    ' FROM %s GROUP BY %s HAVING (COUNT(*) > 1) ) %s',   [SrcTbl.TableName, IndInf.CommaSet, AL_DUP]);
-  Result := Result + Format(
-    ' ON %s ORDER BY %s',                                [IndInf.EquSet, AL_DKEY]);
-end;
-
 
 // Ошибки уникальных ключей
 function TFixUniq.Fix7207: Integer;
@@ -394,8 +454,7 @@ begin
         if (QDups.RecordCount > 0) then begin
           // для всех групп с одинаковым значением индекса
           // оставить одну запись из группы
-          LeaveOnlyAllowed(QDups, SrcTbl, i, Q);
-          FDelDups := FDelDups + DelDups4Idx(SrcTbl.TableName, SrcTbl.List4Del, TmpConn);
+          FDelDups := FDelDups + LeaveOnlyAllowed(QDups, Q);
         end;
       end;
       // поиск некорректных AUTOINC
@@ -403,6 +462,7 @@ begin
   except
   end;
   Result := FDelEmps + FDelDups;
+  SrcTbl.ErrInfo.Rows4Del := FBadRows;
 end;
 
 // вызов метода для кода ошибки
