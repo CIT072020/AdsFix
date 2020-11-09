@@ -29,7 +29,7 @@ type
     FQDups    : TAdsQuery;
     FDelEmps  : Integer;
     FDelDups  : Integer;
-    FIDs4Del  : string;
+    //FIDs4Del  : string;
 
     FBadRows  : TStringList;
 
@@ -49,7 +49,7 @@ type
     function MarkAll4Del(Q : TAdsQuery; DelNow: Boolean): integer;
 
     // Перебор дубликатов, выбор и формирование списка для удаления
-    function LeaveOnlyAllowed(Q: TAdsQuery; Q1F: TAdsQuery) : integer;
+    function LeaveOnlyAllowed(Q: TAdsQuery; Q1F: TAdsQuery; DelNow : Boolean): integer;
   protected
   public
     // Параметры проверки и исправления
@@ -61,12 +61,12 @@ type
     // Дубликаты по GROUP BY
     property QDups: TAdsQuery read FQDups write FQDups;
     // Список
-    property RowIDs4Del : string read FIDs4Del write FIDs4Del;
+    //property RowIDs4Del : string read FIDs4Del write FIDs4Del;
 
     // Исправление ошибок 7200, 7207
     function Fix7207 : Integer;
 
-    constructor Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection);
+    constructor Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection; Q : TAdsQuery);
     destructor Destroy; override;
   published
   end;
@@ -116,7 +116,7 @@ begin
 end;
 
 // Список RowID
-function RowIDs2CommList(Rows2Del: TStringList) : string;
+function RowIDs2CommList(Rows2Del: TStringList; InQuot : Boolean = True) : string;
 var
   i : Integer;
   s : String;
@@ -125,7 +125,10 @@ begin
   for i := 0 to Rows2Del.Count - 1 do begin
     if (i > 0) then
       s := s + ',';
-    s := s + Rows2Del[i];
+    if (InQuot = True) then
+      s := s + '''' + Rows2Del[i] + ''''
+    else
+      s := s + Rows2Del[i];
   end;
   Result := s;
 end;
@@ -140,8 +143,44 @@ begin
   Result := Cn.Execute(s);
 end;
 
+// Список планируемых удалений
+function Plan4DelByRowIds(SrcTbl : TTableInf; Rows2Del : TStringList) : Integer;
+var
+  r,
+  i : integer;
+  sIDs,
+  sFs,
+  s : string;
+  Q : TAdsQuery;
+begin
+  Q := SrcTbl.ErrInfo.Plan2Del;
 
-constructor TFixUniq.Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection);
+  sIDs := RowIDs2CommList(Rows2Del);
+  sFs  := RowIDs2CommList(SrcTbl.FieldsInf, False);
+  s    := 'SELECT ROWNUM() AS NPP_, ''DUP'' AS RSN_, TRUE AS FDEL_, ' + sFs +
+    Format(' FROM %s WHERE ROWID IN (%s)', [SrcTbl.TableName, sIDs]);
+  Q.Close;
+  Q.SQL.Clear;
+  Q.SQL.Text := s;
+  Q.Active := True;
+  Q.First;
+  i := 0;
+  while not Q.Eof do begin
+    r := TRow4Del(Rows2Del.Objects[i]).Reason;
+{
+    if (r = RSN_EMP_KEY) then
+      Q.Fields[1].AsString := 'Пусто'
+    else if (r = RSN_DUP_KEY) then
+      Q.Fields[1].AsString := 'Дубль';
+    Q.Fields[2].AsBoolean := TRow4Del(Rows2Del.Objects[i]).DelRow;
+}
+    Q.Next;
+    i := i + 1;
+  end;
+  Result := Q.RecordCount;
+end;
+
+constructor TFixUniq.Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection; Q : TAdsQuery);
 begin
   SrcTbl  := TI;
   FixPars := Pars;
@@ -149,6 +188,10 @@ begin
 
   QDups := TAdsQuery.Create(SrcTbl.AdsT.Owner);
   QDups.AdsConnection := Cn;
+  //TI.ErrInfo.Plan2Del := TAdsQuery.Create(SrcTbl.AdsT.Owner);
+  //TI.ErrInfo.Plan2Del.AdsConnection := Cn;
+
+  TI.ErrInfo.Plan2Del := Q;
   FBadRows := TStringList.Create;
 end;
 
@@ -199,7 +242,7 @@ begin
     if (i > 0) then
       s := s + BoolOp;
     j := IndInf.IndFieldsAdr[i];
-    s := s + EmptyFCond(IndInf.Fields.Strings[i], TFieldsInf(SrcTbl.FieldsInf[j]).FieldType);
+    s := s + EmptyFCond(IndInf.Fields.Strings[i], TFieldsInf(SrcTbl.FieldsInf.Objects[j]).FieldType);
   end;
   Result := Format('SELECT ROWID FROM %s WHERE %s', [SrcTbl.TableName, s]);
 end;
@@ -210,7 +253,7 @@ var
   iNew,
   nDel, i: Integer;
   sID, sExec: string;
-  RowDel: TRow4Del;
+  //RowDel: TRow4Del;
 begin
   nDel := 0;
   sExec := SearchEmptyAnyAll(IndInf);
@@ -300,8 +343,8 @@ begin
     for i := 0 to AdsTbl.FieldsInf.Count - 1 do begin
       if (i > 0) then
         s := s + ' OR ';
-      sField := TFieldsInf(AdsTbl.FieldsInf[i]).Name;
-      FT := TFieldsInf(AdsTbl.FieldsInf[i]).FieldType;
+      sField := AdsTbl.FieldsInf[i];
+      FT := TFieldsInf(AdsTbl.FieldsInf.Objects[i]).FieldType;
       sEmpCond := EmptyFCond(sField, FT, True);
       s := 'SELECT ' + sField + ' FROM ' + AdsTbl.TableName + s4All + sEmpCond;
       Q1F.SQL.Clear;
@@ -347,20 +390,15 @@ end;
 
 // оставить не больше одной записи из группы дубликатов
 // в зависимости от режима удаления
-function TFixUniq.LeaveOnlyAllowed(Q: TAdsQuery; Q1F: TAdsQuery): integer;
+function TFixUniq.LeaveOnlyAllowed(Q: TAdsQuery; Q1F: TAdsQuery; DelNow : Boolean): integer;
 var
-  DelNow: Boolean;
   i, iMax, iDel, FillMax, iNew, RWeight, j, jMax, jStart: Integer;
   sID, s: string;
   RowInf: TRow4Del;
 begin
-  if (FixPars.DelDupMode = TDelDupMode(DDup_USel)) then
-  // Пользователь сам определится
-    DelNow := False
-  else
-    DelNow := True;
   Result := 0;
   if (FixPars.DelDupMode = TDelDupMode(DDup_ALL)) then begin
+    // удалить все дубли
     Result := MarkAll4Del(Q, DelNow);
     Exit;
   end;
@@ -427,11 +465,18 @@ function TFixUniq.Fix7207: Integer;
 var
   RowFix, j, i: Integer;
   sExec: string;
+  DelNow : Boolean;
   Q : TAdsQuery;
 begin
   Result := 0;
   FDelEmps := 0;
   FDelDups := 0;
+  if (FixPars.DelDupMode = TDelDupMode(DDup_USel)) then
+  // Пользователь сам определится
+    DelNow := False
+  else
+    DelNow := True;
+
   Q := TAdsQuery.Create(SrcTbl.AdsT.Owner);
   Q.AdsConnection := TmpConn;
   try
@@ -443,7 +488,7 @@ begin
         //sExec := SQL_7207_SearchEmpty(SrcTbl.IndexInf.Items[i]);
         //FDelEmps := FDelEmps + TmpConn.Execute(sExec);
 
-        FDelEmps := FDelEmps + FindDelEmpty(SrcTbl.IndexInf.Items[i], Q);
+        FDelEmps := FDelEmps + FindDelEmpty(SrcTbl.IndexInf.Items[i], Q, DelNow);
 
         // поиск совпадающих ключей
         QDups.SQL.Clear;
@@ -454,7 +499,7 @@ begin
         if (QDups.RecordCount > 0) then begin
           // для всех групп с одинаковым значением индекса
           // оставить одну запись из группы
-          FDelDups := FDelDups + LeaveOnlyAllowed(QDups, Q);
+          FDelDups := FDelDups + LeaveOnlyAllowed(QDups, Q, DelNow);
         end;
       end;
       // поиск некорректных AUTOINC
@@ -463,6 +508,7 @@ begin
   end;
   Result := FDelEmps + FDelDups;
   SrcTbl.ErrInfo.Rows4Del := FBadRows;
+  Plan4DelByRowIds(SrcTbl, FBadRows);
 end;
 
 // вызов метода для кода ошибки
@@ -489,7 +535,7 @@ begin
     case SrcTbl.ErrInfo.ErrClass of
       7008, 7207:
         begin
-            FixDupU := TFixUniq.Create(SrcTbl, AppPars, dtmdlADS.cnABTmp);
+            FixDupU := TFixUniq.Create(SrcTbl, AppPars, dtmdlADS.cnABTmp, dtmdlADS.qDst);
             SrcTbl.RowsFixed := FixDupU.Fix7207;
         end;
       7200:
@@ -500,7 +546,7 @@ begin
             FixState := FIX_NOTHG;
           end
           else begin
-            FixDupU := TFixUniq.Create(SrcTbl, AppPars, dtmdlADS.cnABTmp);
+            FixDupU := TFixUniq.Create(SrcTbl, AppPars, dtmdlADS.cnABTmp, dtmdlADS.qDst);
             SrcTbl.RowsFixed := FixDupU.Fix7207;
           end;
         end;
@@ -569,10 +615,11 @@ end;
 procedure FixAllMarked;
 var
   ErrCode, i: Integer;
+  SetBad : Boolean;
   SrcTbl: TTableInf;
   FixList : TAdsList;
 begin
-
+  SetBad := False;
   with FixBase.FixList.SrcList do begin
     First;
     i := 0;
@@ -596,6 +643,15 @@ begin
           end;
 
           Post;
+          if (AppPars.DelDupMode = DDup_USel) then begin
+            if (SrcTbl.ErrInfo.State = FIX_GOOD) and (SetBad = False) then begin
+              SetBad := True;
+              //dtmdlADS.dsPlan.DataSet := SrcTbl.ErrInfo.Plan2Del;
+            end;
+
+
+
+          end;
         end;
       end;
       Next;

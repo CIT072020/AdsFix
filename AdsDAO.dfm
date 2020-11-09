@@ -154,4 +154,9 @@ object dtmdlADS: TdtmdlADS
     Left = 432
     Top = 128
   end
+  object dsPlan: TDataSource
+    DataSet = qDst
+    Left = 473
+    Top = 32
+  end
 end

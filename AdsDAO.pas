@@ -32,6 +32,7 @@ type
     qSrcIndexes: TAdsQuery;
     qDupGroups: TAdsQuery;
     tblTmp: TAdsTable;
+    dsPlan: TDataSource;
     procedure DataModuleCreate(Sender: TObject);
   private
     FSysAlias : string;

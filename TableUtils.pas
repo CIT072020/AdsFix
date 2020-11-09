@@ -60,6 +60,7 @@ type
     InsErr    : Integer;
 
     Rows4Del : TStringList;
+    Plan2Del : TAdsQuery;
   end;
 
 type
@@ -105,7 +106,7 @@ type
     IndCount  : Integer;
 
     // описание полей таблицы
-    FieldsInf : TList;
+    FieldsInf : TStringList;
     // описание индексов
     IndexInf  : TList;
     // поля с типом autoincrement
@@ -136,7 +137,7 @@ type
   end;
 
 procedure Read1Rec(Rec: TFields);
-function Read1RecEx(Fields: TFields; FInf: TList) : TBadRec;
+function Read1RecEx(Fields: TFields; FInf: TStringList) : TBadRec;
 
 implementation
 
@@ -186,7 +187,7 @@ begin
 
   Self.FSysPfx := AnsiPfx;
 
-  FieldsInf  := TList.Create;
+  FieldsInf  := TStringList.Create;
   FieldsAI   := TStringList.Create;
   IndexInf   := TList.Create;
   BackUps    := TStringList.Create;
@@ -222,7 +223,7 @@ begin
       OneField.TypeSQL   := ArrSootv[OneField.FieldType].Name;
       if (OneField.FieldType = ADS_AUTOINC) then
         FieldsAI.Add(OneField.Name);
-      FieldsInf.Add(OneField);
+      FieldsInf.AddObject(FieldByName('Name').AsString, OneField);
       Next;
     end;
     Close;
@@ -292,7 +293,8 @@ begin
         OneInd.AlsCommaSet := OneInd.AlsCommaSet + AL_SRC + '.' + OneInd.Fields[j];
         OneInd.EquSet := OneInd.EquSet + '(' + AL_SRC + '.' + OneInd.Fields[j] + '=' + AL_DUP + '.' + OneInd.Fields[j] + ')';
         for i := 0 to SrcTbl.FieldsInf.Count - 1 do
-          if (TFieldsInf(SrcTbl.FieldsInf[i]).Name = OneInd.Fields[j]) then begin
+          //if (TFieldsInf(SrcTbl.FieldsInf[i]).Name = OneInd.Fields[j]) then begin
+          if (SrcTbl.FieldsInf[i] = OneInd.Fields[j]) then begin
             OneInd.IndFieldsAdr[j] := i;
             //goto QFor;
             Break;
@@ -325,7 +327,7 @@ begin
 
     for j := 0 to IndInf.Fields.Count - 1 do begin
       k := IndInf.IndFieldsAdr[j];
-      t := TFieldsInf(AdsTI.FieldsInf[k]).FieldType;
+      t := TFieldsInf(AdsTI.FieldsInf.Objects[k]).FieldType;
       if (t in [ADS_LOGICAL, ADS_INTEGER, ADS_SHORTINT, ADS_AUTOINC])
         or (t in ADS_DATES)
         or (t in ADS_BIN) then begin
@@ -349,7 +351,7 @@ end;
 
 
 // Чтение всех полей записи с обработкой ошибок
-function Read1RecEx(Fields: TFields; FInf: TList) : TBadRec;
+function Read1RecEx(Fields: TFields; FInf: TStringList) : TBadRec;
 var
   Ms, j: Integer;
   v: Variant;
@@ -365,7 +367,7 @@ begin
       v := Fields[j].Value;
       if (Length(Fields[j].DisplayText) > 0) then begin
       // Не пусто или не NULL
-        FI := TFieldsInf(FInf[j]);
+        FI := TFieldsInf(FInf.Objects[j]);
         if (FI.FieldType in ADS_DATES) then begin
           t := v;
           Year := YearOf(t);
@@ -405,7 +407,7 @@ begin
 end;
 
 // Попытка позиционирования и чтения выборки записей таблицы
-procedure PositionSomeRecs(AdsTbl: TAdsTable; FInf: TList; Check: TestMode);
+procedure PositionSomeRecs(AdsTbl: TAdsTable; FInf: TStringList; Check: TestMode);
 var
   Step: Integer;
 begin
@@ -503,8 +505,8 @@ begin
         // есть уникальные индексы
             iFld := Field4Alter(AdsTI);
             if (iFld >= 0) then begin
-              s := TFieldsInf(AdsTI.FieldsInf[iFld]).Name;
-              s := 'ALTER TABLE ' + AdsTI.TableName + ' ALTER COLUMN ' + s + ' ' + s + ' ' + TFieldsInf(AdsTI.FieldsInf[iFld]).TypeSQL;
+              s := AdsTI.FieldsInf[iFld];
+              s := 'ALTER TABLE ' + AdsTI.TableName + ' ALTER COLUMN ' + s + ' ' + s + ' ' + TFieldsInf(AdsTI.FieldsInf.Objects[iFld]).TypeSQL;
               Conn.Execute(s);
               s := IncludeTrailingPathDelimiter(Conn.GetConnectionPath) + AdsTI.TableName + '*.BAK';
               DeleteFiles(s);

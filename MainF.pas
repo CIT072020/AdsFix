@@ -41,6 +41,7 @@ type
     pbProg: TProgressBar;
     btnFullFixOne: TButton;
     chkAutoTest: TCheckBox;
+    dbgPlan: TDBGridEh;
     procedure ChangePath2TmpClick(Sender: TObject; var Handled: Boolean);
     procedure btnTblListClick(Sender: TObject);
     procedure btnDelOrigClick(Sender: TObject);
@@ -265,6 +266,7 @@ begin
       FixAllMarked;
       if (dtmdlADS.conAdsBase.IsConnected = True) then
         dtmdlADS.conAdsBase.IsConnected := False;
+
     end;
   finally
     TButtonControl(Sender).Enabled := True;
