@@ -157,8 +157,8 @@ begin
 
   sIDs := RowIDs2CommList(Rows2Del);
   sFs  := RowIDs2CommList(SrcTbl.FieldsInf, False);
-  s    := 'SELECT ROWNUM() AS NPP_, ''DUP'' AS RSN_, TRUE AS FDEL_, ' + sFs +
-    Format(' FROM %s WHERE ROWID IN (%s)', [SrcTbl.TableName, sIDs]);
+  s    := 'SELECT ROWID, ROWNUM() AS NPP_, ''DUP'' AS RSN_, TRUE AS FDEL_, ' + sFs +
+    Format(' FROM %s WHERE ROWID IN (%s) ORDER BY 1', [SrcTbl.TableName, sIDs]);
   Q.Close;
   Q.SQL.Clear;
   Q.SQL.Text := s;
@@ -193,6 +193,7 @@ begin
 
   TI.ErrInfo.Plan2Del := Q;
   FBadRows := TStringList.Create;
+  FBadRows.Sorted := True;
 end;
 
 destructor TFixUniq.Destroy;
