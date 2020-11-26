@@ -551,6 +551,7 @@ begin
             SrcTbl.RowsFixed := FixDupU.Fix7207;
           end;
         end;
+        7016,
       UE_BAD_DATA:
         begin
           SrcTbl.RowsFixed := Fix8901(SrcTbl, dtmdlADS.tblTmp);
@@ -752,7 +753,7 @@ begin
         ss := FileSrc + '.adm';
         sd := TmpName + '.adm';
         ErrAdm := RenameFile(ss, sd);
-        if (ecb = True) then
+        if (ErrAdm = True) then
           SrcTbl.BackUps.Add(sd);
       end;
     end
