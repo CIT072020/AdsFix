@@ -193,7 +193,7 @@ begin
 
   TI.ErrInfo.Plan2Del := Q;
   FBadRows := TStringList.Create;
-  FBadRows.Sorted := True;
+  //FBadRows.Sorted := True;
 end;
 
 destructor TFixUniq.Destroy;

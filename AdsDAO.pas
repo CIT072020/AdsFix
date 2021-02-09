@@ -333,17 +333,47 @@ begin
     Conn.IsConnected := False;
 end;
 
-
-function TFreeList.PathAvail : Boolean;
+// Подключение к папке с Free tables
+function TFreeList.PathAvail: Boolean;
 begin
-  Result := True;
   Path2Src := IncludeTrailingPathDelimiter(Pars.Src);
+  Conn.ConnectPath := Path2Src;
+  Conn.Connect;
+  Result := Conn.IsConnected;
 end;
 
 function TFreeList.TablesListFromPath(QA: TAdsQuery): Integer;
+var
+  i: Integer;
+  s: string;
+  TblCapts: TStringList;
 begin
-  Result := 0;
+  i := 0;
+  with QA do begin
+    SrcList.Close;
+    SrcList.Active := True;
+
+    First;
+    while not Eof do begin
+      i := i + 1;
+      SrcList.Append;
+
+      dtmdlADS.FSrcNpp.AsInteger  := i;
+      dtmdlADS.FSrcMark.AsBoolean := False;
+      dtmdlADS.FSrcTName.AsString := FieldByName('TABLE_NAME').AsString;
+
+      dtmdlADS.FSrcTCaption.AsString := '<' + dtmdlADS.FSrcTName.AsString + '>';
+      dtmdlADS.FSrcTestCode.AsInteger := 0;
+      dtmdlADS.FSrcState.AsInteger := TST_UNKNOWN;
+      dtmdlADS.FSrcFixInf.AsInteger := 0;
+
+      SrcList.Post;
+      Next;
+    end;
+  end;
+  Result := i;
 end;
+
 
 // Построение списка свбодных таблиц для восстановления
 function TFreeList.List4Fix(AppPars : TAppPars) : Integer;
@@ -351,6 +381,11 @@ begin
   Pars := AppPars;
   if (PathAvail = True) then begin
     Pars.SysAdsPfx := SetSysAlias(dtmdlADS.qAny);
+    dtmdlADS.qTablesAll.AdsCloseSQLStatement;
+    dtmdlADS.qTablesAll.SQL.Clear;
+    dtmdlADS.qTablesAll.SQL.Add('SELECT * FROM (EXECUTE PROCEDURE sp_GetTables(NULL,NULL,NULL, ''TABLE'')) AS tmpAllT;');
+    dtmdlADS.qTablesAll.Active := True;
+
     TablesCount := TablesListFromPath(dtmdlADS.qTablesAll);
     //Pars.TotTbls := TablesCount;
     if (TablesCount = 0 ) then
