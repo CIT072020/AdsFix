@@ -58,6 +58,8 @@ type
     FixErr    : Integer;
     // Код завершения INSERT таблицы
     InsErr    : Integer;
+    // Количество записей как результат INSERT
+    TotalIns  : Integer;
 
     Rows4Del : TStringList;
     Plan2Del : TAdsQuery;

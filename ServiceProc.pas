@@ -3,7 +3,8 @@ unit ServiceProc;
 interface
 
 uses
-  Windows, SysUtils, Classes, StrUtils, ShlObj,
+  Windows, SysUtils, Classes, StrUtils, Forms,
+  ShlObj,
   ace;
   
   // типы полей ADS
@@ -143,6 +144,8 @@ type
     AutoFix  : Boolean;
     //FixDupsMode : Integer;
     SysAdsPfx : string;
+    // Form to show result
+    ShowForm : TForm;
 
     function IsDictionary : Boolean;
 

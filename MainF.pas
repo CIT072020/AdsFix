@@ -42,6 +42,8 @@ type
     btnFullFixOne: TButton;
     chkAutoTest: TCheckBox;
     dbgPlan: TDBGridEh;
+    lblTotalIns: TLabel;
+    lblResIns: TLabel;
     procedure ChangePath2TmpClick(Sender: TObject; var Handled: Boolean);
     procedure btnTblListClick(Sender: TObject);
     procedure btnDelOrigClick(Sender: TObject);
@@ -127,6 +129,7 @@ begin
   chkAutoTest.Checked    := AppPars.AutoTest;
 
   AppPars.IsDictionary;
+  AppPars.ShowForm := Self;
   FixBase := TFixBase.Create(AppPars);
 end;
 

@@ -91,6 +91,32 @@ uses
   Math,
   uIFixDmgd;
 
+
+constructor TFixUniq.Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection; Q : TAdsQuery);
+begin
+  SrcTbl  := TI;
+  FixPars := Pars;
+  TmpConn := Cn;
+
+  QDups := TAdsQuery.Create(SrcTbl.AdsT.Owner);
+  QDups.AdsConnection := Cn;
+  //TI.ErrInfo.Plan2Del := TAdsQuery.Create(SrcTbl.AdsT.Owner);
+  //TI.ErrInfo.Plan2Del.AdsConnection := Cn;
+
+  TI.ErrInfo.Plan2Del := Q;
+  FBadRows := TStringList.Create;
+  FBadRows.CaseSensitive := True;
+  //FBadRows.Sorted := True;
+end;
+
+destructor TFixUniq.Destroy;
+begin
+  inherited Destroy;
+  FreeAndNil(FQDups);
+  FreeAndNil(FBadRows);
+end;
+
+
 // Сткока условия [НЕ]пустого поля для SQL-команды
 function EmptyFCond(FieldName: String; FieldType: Integer; NotEmpty: Boolean = False): string;
 var
@@ -180,26 +206,6 @@ begin
   Result := Q.RecordCount;
 end;
 
-constructor TFixUniq.Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection; Q : TAdsQuery);
-begin
-  SrcTbl  := TI;
-  FixPars := Pars;
-  TmpConn := Cn;
-
-  QDups := TAdsQuery.Create(SrcTbl.AdsT.Owner);
-  QDups.AdsConnection := Cn;
-  //TI.ErrInfo.Plan2Del := TAdsQuery.Create(SrcTbl.AdsT.Owner);
-  //TI.ErrInfo.Plan2Del.AdsConnection := Cn;
-
-  TI.ErrInfo.Plan2Del := Q;
-  FBadRows := TStringList.Create;
-  //FBadRows.Sorted := True;
-end;
-
-destructor TFixUniq.Destroy;
-begin
-  inherited Destroy;
-end;
 
 {
 procedure TFixUniq.SetList4Del(NewIDs: string);
@@ -302,7 +308,7 @@ begin
   Result := Format(
     'SELECT %s.ROWID, ''%d'' + %s.ROWID AS %s%s %s',     [AL_SRC, iI, AL_DUP, AL_DKEY, AL_DUPCNTF, IndInf.AlsCommaSet]);
   Result := Result + Format(
-    ' FROM %s %s INNER JOIN (SELECT COUNT(*) AS %s, %s', [SrcTbl.TableName, AL_SRC, AL_DUPCNT, IndInf.CommaSet]);
+    ' FROM %s %s INNER JOIN (SELECT %s, COUNT(*) AS %s', [SrcTbl.TableName, AL_SRC, IndInf.CommaSet, AL_DUPCNT]);
   Result := Result + Format(
     ' FROM %s GROUP BY %s HAVING (COUNT(*) > 1) ) %s',   [SrcTbl.TableName, IndInf.CommaSet, AL_DUP]);
   Result := Result + Format(
@@ -769,19 +775,20 @@ begin
 
       try
         if (ChangeAI(SrcTbl, ' INTEGER', Conn) = True) then begin
+          SrcTbl.ErrInfo.TotalIns := 0;
           if (SrcTbl.GoodSpans.Count <= 0) then begin
         // Загрузка оптом
             ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT * FROM "' + FileDst + '" SRC';
             if (Length(SrcTbl.DmgdRIDs) > 0) then
               ss := ss + ' WHERE SRC.ROWID NOT IN (' + SrcTbl.DmgdRIDs + ')';
-            Conn.Execute(ss);
+            SrcTbl.ErrInfo.TotalIns := Conn.Execute(ss);
           end
           else begin
         // Загрузка интервалами хороших записей
             for i := 0 to SrcTbl.GoodSpans.Count - 1 do begin
               Span := SrcTbl.GoodSpans[i];
               ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) + ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
-              Conn.Execute(ss);
+              SrcTbl.ErrInfo.TotalIns := SrcTbl.ErrInfo.TotalIns + Conn.Execute(ss);
             end;
           end;
           ChangeAI(SrcTbl, ' AUTOINC', Conn, '.ad?.bak');
@@ -829,6 +836,7 @@ begin
 
             dtmdlADS.mtSrc.Edit;
             GoodChange := ChangeOriginal(FixBase.FixList.Path2Src, AppPars.Path2Tmp, SrcTbl);
+            //(TFormMain(AppPars.ShowForm)).lblResIns.Caption := IntToStr(SrcTbl.ErrInfo.TotalIns);
             //GoodChange := DAds.ChangeOriginal;
             if (GoodChange = True) then begin
           // успешно вствлено
