@@ -267,8 +267,8 @@ begin
     if (Length(s) > 0) then begin
       AppPars.Path2Tmp := s;
       FixAllMarked;
-      if (dtmdlADS.conAdsBase.IsConnected = True) then
-        dtmdlADS.conAdsBase.IsConnected := False;
+      //if (dtmdlADS.conAdsBase.IsConnected = True) then
+      dtmdlADS.conAdsBase.IsConnected := False;
 
     end;
   finally

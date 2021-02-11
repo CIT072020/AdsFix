@@ -75,6 +75,9 @@ const
   AL_DUPCNT  : string = 'DUPCNT';
   AL_DUPCNTF : string = ',D.DUPCNT,';
 
+  // “аблица с планом исправлений
+  PLAN_NAME = 'tmpPlanFix';
+
   // пользовательские коды ошибок
   // ‘се есть гут
   UE_OK       = 0;

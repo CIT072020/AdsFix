@@ -63,6 +63,7 @@ type
 
     Rows4Del : TStringList;
     Plan2Del : TAdsQuery;
+    PlanFix  : TAdsTable;
   end;
 
 type
