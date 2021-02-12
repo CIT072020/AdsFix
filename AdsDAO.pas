@@ -33,7 +33,6 @@ type
     qDupGroups: TAdsQuery;
     tblTmp: TAdsTable;
     dsPlan: TDataSource;
-    tblPlan: TAdsTable;
     procedure DataModuleCreate(Sender: TObject);
   private
     FSysAlias : string;

@@ -159,9 +159,4 @@ object dtmdlADS: TdtmdlADS
     Left = 473
     Top = 32
   end
-  object tblPlan: TAdsTable
-    AdsConnection = cnABTmp
-    Left = 488
-    Top = 128
-  end
 end

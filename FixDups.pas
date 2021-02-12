@@ -32,7 +32,6 @@ type
     //FIDs4Del  : string;
 
     FBadRows  : TStringList;
-    FPlanFix  : TAdsTable;
 
     // SQL-запрос поиска пустых значений [под]ключей среди уникадьных индексов
     function SearchEmptyAnyAll(IndInf : TIndexInf; BoolOp : string = ' OR ') : string;
@@ -51,8 +50,13 @@ type
 
     // Перебор дубликатов, выбор и формирование списка для удаления
     function LeaveOnlyAllowed(Q: TAdsQuery; Q1F: TAdsQuery; DelNow : Boolean): integer;
+    function Plan4DelByRowIds : Integer;
   protected
   public
+    //Rows4Del : TStringList;
+    // Планируемые исправления
+    PlanFixQ : TAdsQuery;
+
     // Параметры проверки и исправления
     property FixPars : TAppPars read FPars write FPars;
     // Объект состояния таблицы
@@ -60,11 +64,8 @@ type
     // ADS-Connection для папки TMP
     property TmpConn: TAdsConnection read FTmpConn write FTmpConn;
 
-    // Дубликаты по GROUP BY
+    // Дубликаты в free-таблице по GROUP BY
     property QDups: TAdsQuery read FQDups write FQDups;
-
-    // Планируемые исправления
-    property PlanFix : TAdsTable read FPlanFix write FPlanFix;
 
     // Список
     //property RowIDs4Del : string read FIDs4Del write FIDs4Del;
@@ -72,7 +73,9 @@ type
     // Исправление ошибок 7200, 7207
     function Fix7207 : Integer;
 
-    constructor Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection; PlanTable : TAdsTable);
+    //constructor Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection; PlanTable : TAdsTable);
+    //constructor Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection; PlanTable : TAdsTable; PlanQ : TAdsQuery.);
+    constructor Create(TI : TTableInf; Pars : TAppPars);
     destructor Destroy; override;
   published
   end;
@@ -98,20 +101,21 @@ uses
   uIFixDmgd;
 
 
-constructor TFixUniq.Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection; PlanTable : TAdsTable);
+constructor TFixUniq.Create(TI : TTableInf; Pars : TAppPars);
 begin
   SrcTbl  := TI;
   FixPars := Pars;
-  TmpConn := Cn;
+  TmpConn := dtmdlADS.cnABTmp;
 
   QDups := TAdsQuery.Create(SrcTbl.AdsT.Owner);
-  QDups.AdsConnection := Cn;
+  QDups.AdsConnection := TmpConn;
 
-  TI.ErrInfo.Plan2Del := TAdsQuery.Create(SrcTbl.AdsT.Owner);
-  TI.ErrInfo.Plan2Del.AdsConnection := Cn;
+  //TI.ErrInfo.Plan2Del := TAdsQuery.Create(SrcTbl.AdsT.Owner);
+  //TI.ErrInfo.Plan2Del.AdsConnection := Cn;
 
-  TI.ErrInfo.PlanFix := PlanTable;
-  TI.ErrInfo.PlanFix.AdsConnection := Cn;
+  //TI.ErrInfo.PlanFix := PlanTable;
+  //TI.ErrInfo.PlanFix.AdsConnection := Cn;
+  PlanFixQ := dtmdlADS.qDst;
 
   FBadRows := TStringList.Create;
   FBadRows.CaseSensitive := True;
@@ -173,7 +177,6 @@ begin
   i := Length(s);
   if (i > 1) then
     Delete(s, i, 1);
-  MemoWrite('z222',s);
   Result := s;
 end;
 
@@ -187,43 +190,76 @@ begin
   Result := Cn.Execute(s);
 end;
 
+
+
+// Построить SQL-запрос для получения редактируемого DataSet
+function MakeEdiAbleCursor(const SQLMain1, SQLMain2 : string; TmpName : string = '#tmpEditACursor') : string;
+begin
+  Result := Format('TRY DROP TABLE %s;CATCH ALL END TRY; %s INTO %s %s; SELECT * FROM %s;',
+    [TmpName, SQLMain1, TmpName, SQLMain2, TmpName]);
+end;
+
+
 // Список планируемых удалений
-function Plan4DelByRowIds(SrcTbl: TTableInf; Rows2Del: TStringList; Conn: TAdsConnection): Integer;
+function TFixUniq.Plan4DelByRowIds : Integer;
 var
+  j,
   r, i: integer;
   sFieldList,
   sLast,
+  sSQL,
   sIDs, s: string;
   Q: TAdsQuery;
   Plan: TAdsTable;
+  xR4D : TRow4Del;
 begin
   try
-    Q := SrcTbl.ErrInfo.Plan2Del;
-    Plan := SrcTbl.ErrInfo.PlanFix;
-    Plan.Active := False;
-    Plan.TableName := PLAN_NAME;
 
-    sIDs := RowIDs2CommList(Rows2Del);
+    sIDs := RowIDs2CommList(FBadRows);
     sFieldList := RowIDs2CommList(SrcTbl.FieldsInf, '');
     s := 'SELECT ROWID, ROWNUM() AS NPP_, ''DUP'' AS RSN_, TRUE AS FDEL_, ' + sFieldList;
-    sLast := Format(' INTO %s FROM "%s" WHERE ROWID IN (%s) ORDER BY 1', [PLAN_NAME, SrcTbl.TableName, sIDs]);
-    s := s + sLast;
+    sLast := Format('FROM "%s" WHERE ROWID IN (%s) ', [SrcTbl.TableName, sIDs]);
 
-    //Conn.Execute(s);
-
-
+    Q := PlanFixQ;
     Q.Close;
     Q.AdsCloseSQLStatement;
     Q.SQL.Clear;
-    Q.SQL.Text := s;
+    Q.SQL.Text := MakeEdiAbleCursor(s, sLast);
+    Q.RequestLive := True;
+    MemoWrite('z222', Q.SQL.Text);
     Q.Active := True;
     Q.First;
 
+{
+    Plan := PlanFix;
+    Plan.Active := False;
+    sSQL := s + ' INTO ' + PLAN_NAME + sLast;
+    MemoWrite('z222',sSQL);
+    TmpConn.Execute(sSQL);
+    Plan.TableName := PLAN_NAME;
     Plan.Active := True;
     Plan.First;
+}
+
     i := 0;
-    while not Plan.Eof do begin
-      r := TRow4Del(Rows2Del.Objects[i]).Reason;
+    while not Q.Eof do begin
+      j := FBadRows.IndexOf(Q.FieldValues['ROWID']);
+      if (j >= 0) then begin
+        xR4D := TRow4Del(FBadRows.Objects[j]);
+        r := xR4D.Reason;
+        Q.Edit;
+        if (r = RSN_EMP_KEY) then
+          Q.FieldValues['RSN_'].AsString := 'Пусто'
+        else if (r = RSN_DUP_KEY) then
+          Q.FieldValues['RSN_'].AsString := 'Дубль';
+        Q.FieldValues['FDEL_'].AsBoolean := xR4D.DelRow;
+        Q.Post;
+      end;
+      i := i + 1;
+      Q.Next;
+    end;
+
+
 
 {    if (r = RSN_EMP_KEY) then
       Q.Fields[1].AsString := 'Пусто'
@@ -231,12 +267,17 @@ begin
       Q.Fields[1].AsString := 'Дубль';
     Q.Fields[2].AsBoolean := TRow4Del(Rows2Del.Objects[i]).DelRow;
 }
-      Plan.Next;
-      Q.Next;
+{
+    i := 0;
+    while not Plan.Eof do begin
       i := i + 1;
+      Plan.Next;
     end;
     Result := Plan.RecordCount;
-    Plan.Active := False;
+}
+
+    Result := Q.RecordCount;
+    //Plan.Active := False;
   except
     Result := -1;
   end;
@@ -552,8 +593,8 @@ begin
   except
   end;
   Result := FDelEmps + FDelDups;
-  SrcTbl.ErrInfo.Rows4Del := FBadRows;
-  Plan4DelByRowIds(SrcTbl, FBadRows, TmpConn);
+  //SrcTbl.ErrInfo.Rows4Del := FBadRows;
+  Plan4DelByRowIds;
 end;
 
 // вызов метода для кода ошибки
@@ -579,7 +620,7 @@ begin
     case SrcTbl.ErrInfo.ErrClass of
       7008, 7207:
         begin
-            FixDupU := TFixUniq.Create(SrcTbl, AppPars, dtmdlADS.cnABTmp, dtmdlADS.tblPlan);
+            FixDupU := TFixUniq.Create(SrcTbl, AppPars);
             SrcTbl.RowsFixed := FixDupU.Fix7207;
         end;
       7200:
@@ -590,7 +631,7 @@ begin
             FixState := FIX_NOTHG;
           end
           else begin
-            FixDupU := TFixUniq.Create(SrcTbl, AppPars, dtmdlADS.cnABTmp, dtmdlADS.tblPlan);
+            FixDupU := TFixUniq.Create(SrcTbl, AppPars);
             SrcTbl.RowsFixed := FixDupU.Fix7207;
           end;
         end;

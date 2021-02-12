@@ -44,6 +44,7 @@ type
     dbgPlan: TDBGridEh;
     lblTotalIns: TLabel;
     lblResIns: TLabel;
+    btnTestQ: TButton;
     procedure ChangePath2TmpClick(Sender: TObject; var Handled: Boolean);
     procedure btnTblListClick(Sender: TObject);
     procedure btnDelOrigClick(Sender: TObject);
@@ -58,6 +59,7 @@ type
     procedure btnProcMarkClick(Sender: TObject);
     procedure btnGetFixedClick(Sender: TObject);
     procedure btnTestClick(Sender: TObject);
+    procedure btnTestQClick(Sender: TObject);
     procedure cbbPath2SrcChange(Sender: TObject);
     procedure chkAutoTestClick(Sender: TObject);
     procedure rgDelDupModeClick(Sender: TObject);
@@ -75,6 +77,7 @@ var
 implementation
 
 uses
+  adstable,
   UIHelper,
   AdsDAO,
   FixTypes,
@@ -266,10 +269,10 @@ begin
     s := IsCorrectTmp(AppPars.Path2Tmp);
     if (Length(s) > 0) then begin
       AppPars.Path2Tmp := s;
+      dtmdlADS.cnABTmp.IsConnected := False;
       FixAllMarked;
       //if (dtmdlADS.conAdsBase.IsConnected = True) then
       dtmdlADS.conAdsBase.IsConnected := False;
-
     end;
   finally
     TButtonControl(Sender).Enabled := True;
@@ -358,6 +361,15 @@ begin
     TButtonControl(Sender).Enabled := True;
   end;
 end;
+
+procedure TFormMain.btnTestQClick(Sender: TObject);
+var
+  Q : TAdsQuery;
+begin
+  Q := dtmdlADS.qDst;
+
+end;
+
 
 end.
 

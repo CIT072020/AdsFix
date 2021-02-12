@@ -60,10 +60,6 @@ type
     InsErr    : Integer;
     // Количество записей как результат INSERT
     TotalIns  : Integer;
-
-    Rows4Del : TStringList;
-    Plan2Del : TAdsQuery;
-    PlanFix  : TAdsTable;
   end;
 
 type
@@ -198,7 +194,8 @@ begin
   NeedBackUp := True;
 
   ErrInfo   := TErrInfo.Create;
-  ErrInfo.Rows4Del := TStringList.Create; 
+  //ErrInfo.Rows4Del := TStringList.Create;
+
   BadRecs   := TList.Create;
   GoodSpans := TList.Create;
 end;
