@@ -18,7 +18,19 @@ const
   FWT_STR  : Integer = 30;
   FWT_BIN  : Integer = 5;
 
+  // Таблица (временная) с планом исправлений
+  TMP_PLAN = '#tmpPlanFix';
+
 type
+  // Описание планируемой к удалению строки ADT-таблицы
+  TRow4Del = class
+    RowID : string;
+    FillPcnt : Integer;
+    DelRow : Boolean;
+    Reason : Integer;
+    GroupID : string;
+  end;
+
   TFixUniq = class(TInterfacedObject)
   // Класс исправления ошибок уникальности индексов
   // в таблицах ADS
@@ -84,7 +96,7 @@ type
 procedure FixAllMarked;
 // Исправить оригинал для отмеченных
 procedure ChangeOriginalAllMarked;
-procedure DelBackUps;
+procedure ProceedBackUps(Mode : Integer);
 
 // Easy Mode - one button
 procedure FullFixAllMarked(FixAll : Boolean = True);
@@ -160,17 +172,6 @@ var
   i : Integer;
   s : AnsiString;
 begin
-//  for i := 0 to Rows2Del.Count - 1 do begin
-//    if (i > 0) then
-//      s := s + ',';
-//    if (InQuot = True) then
-//      s := s + '''' + Rows2Del[i] + ''''
-//    else
-//      s := s + Rows2Del[i];
-//  end;
-
-//      s := Format('%s%s%s%s,', [s, sKv, Rows2Del[i], sKv]);
-
   s := '';
   for i := 0 to Rows2Del.Count - 1 do
       s := s + sKv + Rows2Del.Strings[i] + sKv + ',';
@@ -191,12 +192,14 @@ begin
 end;
 
 
-
 // Построить SQL-запрос для получения редактируемого DataSet
-function MakeEdiAbleCursor(const SQLMain1, SQLMain2 : string; TmpName : string = '#tmpEditACursor') : string;
+function MakeEdiAbleCursor(const SQLMain1, SQLMain2 : string; SortBy : string = ''; TmpName : string = TMP_PLAN) : string;
 begin
-  Result := Format('TRY DROP TABLE %s;CATCH ALL END TRY; %s INTO %s %s; SELECT * FROM %s;',
-    [TmpName, SQLMain1, TmpName, SQLMain2, TmpName]);
+  Result := Format('TRY DROP TABLE %s;CATCH ALL END TRY; %s INTO %s %s;',
+    [TmpName, SQLMain1, TmpName, SQLMain2]);
+  if (SortBy <> '') then
+    SortBy := ' ORDER BY ' + SortBy;
+  Result := Result + Format(' SELECT * FROM %s %s;', [TmpName, SortBy]);
 end;
 
 
@@ -206,9 +209,10 @@ var
   j,
   r, i: integer;
   sFieldList,
-  sLast,
   sSQL,
-  sIDs, s: string;
+  sIDs,
+  sEnd,
+  sBeg: string;
   Q: TAdsQuery;
   Plan: TAdsTable;
   xR4D : TRow4Del;
@@ -217,67 +221,47 @@ begin
 
     sIDs := RowIDs2CommList(FBadRows);
     sFieldList := RowIDs2CommList(SrcTbl.FieldsInf, '');
-    s := 'SELECT ROWID, ROWNUM() AS NPP_, ''DUP'' AS RSN_, TRUE AS FDEL_, ' + sFieldList;
-    sLast := Format('FROM "%s" WHERE ROWID IN (%s) ', [SrcTbl.TableName, sIDs]);
+    sBeg := 'SELECT ''GDUP'' AS ' + AL_DKEY + ', ROWID, ROWNUM() AS NPP_, ''DUP'' AS RSN_, TRUE AS FDEL_, ' + sFieldList;
+    sEnd := Format('FROM "%s" WHERE ROWID IN (%s) ', [SrcTbl.TableName, sIDs]);
+    sEnd := sEnd + Format('; ALTER TABLE %s ALTER COLUMN %s %s CHAR(20) ALTER COLUMN RSN_ RSN_ CHAR(10)',
+    [TMP_PLAN, AL_DKEY, AL_DKEY]);
+
 
     Q := PlanFixQ;
     Q.Close;
     Q.AdsCloseSQLStatement;
     Q.SQL.Clear;
-    Q.SQL.Text := MakeEdiAbleCursor(s, sLast);
+    Q.SQL.Text := MakeEdiAbleCursor(sBeg, sEnd, '', TMP_PLAN);
     Q.RequestLive := True;
     MemoWrite('z222', Q.SQL.Text);
     Q.Active := True;
     Q.First;
 
-{
-    Plan := PlanFix;
-    Plan.Active := False;
-    sSQL := s + ' INTO ' + PLAN_NAME + sLast;
-    MemoWrite('z222',sSQL);
-    TmpConn.Execute(sSQL);
-    Plan.TableName := PLAN_NAME;
-    Plan.Active := True;
-    Plan.First;
-}
-
     i := 0;
     while not Q.Eof do begin
       j := FBadRows.IndexOf(Q.FieldValues['ROWID']);
+
       if (j >= 0) then begin
         xR4D := TRow4Del(FBadRows.Objects[j]);
         r := xR4D.Reason;
         Q.Edit;
+        Q.FieldValues['FDEL_'] := xR4D.DelRow;
+        Q.FieldValues[AL_DKEY] := xR4D.GroupID;
+{
+
         if (r = RSN_EMP_KEY) then
           Q.FieldValues['RSN_'].AsString := 'Пусто'
         else if (r = RSN_DUP_KEY) then
-          Q.FieldValues['RSN_'].AsString := 'Дубль';
-        Q.FieldValues['FDEL_'].AsBoolean := xR4D.DelRow;
+          Q.FieldValues['RSN_'] := 'Дубль';
+}          
         Q.Post;
       end;
+
       i := i + 1;
       Q.Next;
     end;
 
-
-
-{    if (r = RSN_EMP_KEY) then
-      Q.Fields[1].AsString := 'Пусто'
-    else if (r = RSN_DUP_KEY) then
-      Q.Fields[1].AsString := 'Дубль';
-    Q.Fields[2].AsBoolean := TRow4Del(Rows2Del.Objects[i]).DelRow;
-}
-{
-    i := 0;
-    while not Plan.Eof do begin
-      i := i + 1;
-      Plan.Next;
-    end;
-    Result := Plan.RecordCount;
-}
-
     Result := Q.RecordCount;
-    //Plan.Active := False;
   except
     Result := -1;
   end;
@@ -310,6 +294,7 @@ begin
     RowDel.RowID := Result;
     RowDel.DelRow := True;
     RowDel.Reason := Why;
+    RowDel.GroupID := Q.FieldValues[AL_DKEY];
     Dst.AddObject(Result, RowDel);
     Why := Dst.Count - 1;
   end
@@ -852,6 +837,7 @@ begin
   //---
 
       try
+        // врЕменная замена AUTOINC на INTEGER
         if (ChangeAI(SrcTbl, ' INTEGER', Conn) = True) then begin
           SrcTbl.ErrInfo.TotalIns := 0;
           if (SrcTbl.GoodSpans.Count <= 0) then begin
@@ -869,6 +855,7 @@ begin
               SrcTbl.ErrInfo.TotalIns := SrcTbl.ErrInfo.TotalIns + Conn.Execute(ss);
             end;
           end;
+        // восстановление AUTOINC на INTEGER
           ChangeAI(SrcTbl, ' AUTOINC', Conn, '.ad?.bak');
         end;
         SrcTbl.ErrInfo.State := INS_GOOD;
@@ -938,31 +925,75 @@ begin
 
 end;
 
+
+
+
+// Восстановление сохраненных оригиналов с ошибками (BAckups) для одной таблицы
+function RestBUps4OneTable(SrcTbl: TTableInf; P2Src: string): integer;
+var
+  FullName, Orig: string;
+  i: Integer;
+begin
+  Result := 0;
+  try
+    Orig := P2Src + SrcTbl.Tablename;
+    FullName := Orig + '.adi';
+    if (FileExists(FullName)) then
+        DeleteFile(FullName);
+
+    for i := 0 to SrcTbl.BackUps.Count-1 do begin
+      FullName := Orig + ExtractFileExt(SrcTbl.BackUps[i]);
+      if (FileExists(FullName)) then
+        DeleteFile(FullName);
+      if (RenameFile(SrcTbl.BackUps[i], FullName) = True) then begin
+        Result := Result + 1;
+        SrcTbl.BackUps[i] := '';
+      end
+      else
+        raise Exception.Create('Err rename');
+    end;
+    SrcTbl.BackUps.Clear;
+  except
+    Result := -1;
+  end;
+end;
+
+
 // Удаление сохраненных оригиналов с ошибками (BAckups) для одной таблицы
 function DelBUps4OneTable(SrcTbl: TTableInf): integer;
 var
   i: Integer;
 begin
   Result := 0;
-  for i := 1 to SrcTbl.BackUps.Count do
-    if (DeleteFiles(SrcTbl.BackUps[i - 1]) = True) then
+  try
+  for i := 0 to SrcTbl.BackUps.Count-1 do
+    if (DeleteFiles(SrcTbl.BackUps[i]) = True) then begin
       Result := Result + 1;
+      SrcTbl.BackUps[i] := '';
+    end;
+  SrcTbl.BackUps.Clear;
+  except
+    Result := -1;
+  end;
 end;
 
 // Удалить BAckup оригиналов
-procedure DelBackUps;
+procedure ProceedBackUps(Mode : Integer);
 var
   PTblInf: ^TTableInf;
-  TotDel: Integer;
+  TotFiles: Integer;
 begin
   if (dtmdlADS.mtSrc.Active = True) then
     with dtmdlADS.mtSrc do begin
       First;
-      TotDel := 0;
+      TotFiles := 0;
       while not Eof do begin
         PTblInf := Ptr(dtmdlADS.FSrcFixInf.AsInteger);
         if Assigned(PTblInf) then begin
-          TotDel := TotDel + DelBUps4OneTable(TTableInf(PTblInf));
+          if (Mode = 0) then
+            TotFiles := TotFiles + DelBUps4OneTable(TTableInf(PTblInf))
+          else
+            TotFiles := TotFiles + RestBUps4OneTable(TTableInf(PTblInf), FixBase.FixList.Path2Src);
         end;
         Next;
       end;

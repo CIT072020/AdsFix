@@ -64,6 +64,10 @@ const
   INS_GOOD    : Integer = 64;
   INS_ERRORS  : Integer = 128;
 
+  // ѕользователь должен установить удал€емые дубликаты
+  FIX_UWAIT   : Integer = 1 SHL 20;
+
+
   // ѕричины удалени€ строк
   RSN_EMP_KEY = 1;
   RSN_DUP_KEY = 2;
@@ -74,9 +78,6 @@ const
   AL_DKEY    : string = 'DUPGKEY';
   AL_DUPCNT  : string = 'DUPCNT';
   AL_DUPCNTF : string = ',D.DUPCNT,';
-
-  // “аблица с планом исправлений
-  PLAN_NAME = 'tmpPlanFix';
 
   // пользовательские коды ошибок
   // ‘се есть гут

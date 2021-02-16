@@ -30,7 +30,7 @@ type
     lblPath2Tmp: TLabel;
     btnProcMark: TButton;
     btnGetFixed: TButton;
-    btnDelOrig: TButton;
+    btnRestOrig: TButton;
     btnTest: TButton;
     rgDelDupMode: TRadioGroup;
     btnTblList: TBitBtn;
@@ -47,7 +47,7 @@ type
     btnTestQ: TButton;
     procedure ChangePath2TmpClick(Sender: TObject; var Handled: Boolean);
     procedure btnTblListClick(Sender: TObject);
-    procedure btnDelOrigClick(Sender: TObject);
+    procedure btnRestOrigClick(Sender: TObject);
     procedure btnFixAllClick(Sender: TObject);
     procedure btnFullFixOneClick(Sender: TObject);
 
@@ -140,7 +140,7 @@ procedure TFormMain.FormDestroy(Sender: TObject);
 var
   Ini: TIniFile;
 begin
-  DelBackUps;
+  ProceedBackUps(0);
   Ini := TIniFile.Create(ChangeFileExt(Application.ExeName, '.INI'));
   try
     if Length(cbbPath2Src.Text) > 0 then
@@ -291,12 +291,12 @@ begin
 end;
 
 
-// Удалить копии оригинала
-procedure TFormMain.btnDelOrigClick(Sender: TObject);
+// Восстановить оригинал
+procedure TFormMain.btnRestOrigClick(Sender: TObject);
 begin
   TButtonControl(Sender).Enabled := False;
   try
-    DelBackUps;
+    ProceedBackUps(1);
   finally
     TButtonControl(Sender).Enabled := True;
   end;

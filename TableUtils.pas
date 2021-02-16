@@ -27,21 +27,14 @@ type
     IndFieldsAdr: array of integer;
   end;
 
-  // Описание планируемой к удалению строки
-  TRow4Del = class
-    RowID : string;
-    FillPcnt : Integer;
-    DelRow : Boolean;
-    Reason : Integer;
-  end;
-
   // описание записи в наборе дубликатов
+{
   TDupRow = class
     RowID : string;
     FillPcnt : Integer;
     DelRow : Boolean;
   end;
-
+}
 
 type
   // Info по ошибке
