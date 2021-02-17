@@ -48,7 +48,7 @@ const
 
 type
 
-  // Список исходных ADS-таблиц для проверки и восстановления
+  // Список исходных ADS-таблиц для проверки [и восстановления]
   TAdsList = class
   private
     FPars    : TAppPars;
@@ -94,7 +94,7 @@ type
   published
   end;
 
-  // Список свбодных таблиц в папке
+  // Список свободных таблиц в папке
   TFreeList = class(TAdsList)
   private
     function PathAvail : Boolean;

@@ -39,7 +39,6 @@ type
     property FixPars : TAppPars read FPars write FPars;
     // Список таблиц (словарь или папка)
     property FixList : TAdsList read FTblList write FTblList;
-
     // Заполнить и вернуть список ADS-таблиц
     function CreateFixList : TAdsList;
 

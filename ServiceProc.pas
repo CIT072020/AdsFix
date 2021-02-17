@@ -129,30 +129,30 @@ type
 type
   // Параметры для восстановления
   TAppPars = class
-    Src      : String;
-    IsDict   : Boolean;
+  private
+  public
+    Src: String;
+    IsDict: Boolean;
     //Path2Src : String;
-    Path2Tmp : String;
+    Path2Tmp: String;
     // Установленные Login/Password
-    ULogin   : String;
-    UPass    : String;
+    ULogin: String;
+    UPass: String;
     // всего таблиц
     //TotTbls  : Integer;
     // Режим тестирования
-    TMode    : TestMode;
+    TMode: TestMode;
     // Способ удаления дубликатов
-    DelDupMode : TDelDupMode;
+    DelDupMode: TDelDupMode;
     // Флаг тестирования при получении списка таблиц
-    AutoTest : Boolean;
+    AutoTest: Boolean;
     // автопоиск наиболее подходящих строк для удаления из дубликатов
-    AutoFix  : Boolean;
+    AutoFix: Boolean;
     //FixDupsMode : Integer;
-    SysAdsPfx : string;
+    SysAdsPfx: string;
     // Form to show result
-    ShowForm : TForm;
-
-    function IsDictionary : Boolean;
-
+    ShowForm: TForm;
+    function IsDictionary: Boolean;
   end;
 
 
