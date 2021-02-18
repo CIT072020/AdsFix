@@ -200,12 +200,42 @@ begin
   inherited Destroy;
 end;
 
+function FType2ADS(FT : TFieldType) : Integer ;
+var
+  i : Integer;
+begin
+  Result := 0;
+  for i := 0 to Length(AdsDataTypeMap) - 1 do
+    if (AdsDataTypeMap[i] = FT) then begin
+      Result := i;
+      Break;
+    end;
+end;
+
+
 // сведения о полях одной таблицы (SQL)
 procedure TTableInf.FieldsInfo(Q : TAdsQuery);
 var
+  i : Integer;
   OneField: TFieldsInf;
 begin
   with Q do begin
+
+    SQL.Clear;
+    SQL.Add( Format('SELECT TOP 1 * FROM "%s" WHERE (False)' , [TableName]) );
+    Active := True;
+    for i := 0 to FieldDefs.Count - 1 do begin
+      OneField := TFieldsInf.Create;
+      OneField.Name      := FieldDefs[i].Name;
+      OneField.FieldType := FType2ADS(FieldDefs[i].DataType);
+      OneField.TypeSQL   := ArrSootv[OneField.FieldType].Name;
+      if (OneField.FieldType = ADS_AUTOINC) then
+        FieldsAI.Add(OneField.Name);
+      FieldsInf.AddObject(OneField.Name, OneField);
+    end;
+
+{
+    SQL.Clear;
     SQL.Add( Format('SELECT * FROM %sCOLUMNS WHERE PARENT=''%s''' , [FSysPfx, TableName]) );
     Active := True;
     First;
@@ -219,6 +249,7 @@ begin
       FieldsInf.AddObject(FieldByName('Name').AsString, OneField);
       Next;
     end;
+}
     Close;
     AdsCloseSQLStatement;
     AdsConnection.CloseCachedTables;

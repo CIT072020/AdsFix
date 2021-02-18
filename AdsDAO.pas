@@ -400,7 +400,47 @@ end;
 
 // Тестирование всех или только отмеченных
 procedure TFreeList.TestSelected(ModeAll : Boolean; TMode : TestMode);
+var
+  ec, i: Integer;
+  TableInf : TTableInf;
 begin
+
+    with SrcList do begin
+
+      First;
+      i := 0;
+      while not Eof do begin
+        i := i + 1;
+        if ((dtmdlADS.FSrcState.AsInteger = TST_UNKNOWN) AND (ModeAll = True))
+          OR ((dtmdlADS.FSrcMark.AsBoolean = True) AND (ModeAll = False)) then begin
+          // все непроверенные или отмеченные
+          Edit;
+
+          TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.conAdsBase, dtmdlADS.SYSTEM_ALIAS);
+          dtmdlADS.FSrcFixInf.AsInteger := Integer(TableInf);
+
+          ec := TableInf.Test1Table(TableInf, TMode);
+          dtmdlADS.FSrcAIncs.AsInteger := TableInf.FieldsAI.Count;
+          dtmdlADS.FSrcTestCode.AsInteger := ec;
+          if (ec > 0) then begin
+            dtmdlADS.FSrcMark.AsBoolean := True;
+            dtmdlADS.FSrcErrNative.AsInteger := TableInf.ErrInfo.NativeErr;
+            ec := TST_ERRORS;
+          end
+          else begin
+            dtmdlADS.FSrcMark.AsBoolean := False;
+            ec := TST_GOOD;
+            end;
+          dtmdlADS.FSrcState.AsInteger := ec;
+
+          Post;
+        end;
+        Next;
+      end;
+      First;
+
+    end;
+    SrcList.EnableControls;
     Conn.IsConnected := False;
 end;
 
