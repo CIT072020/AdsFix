@@ -269,10 +269,10 @@ begin
     s := IsCorrectTmp(AppPars.Path2Tmp);
     if (Length(s) > 0) then begin
       AppPars.Path2Tmp := s;
-      dtmdlADS.cnABTmp.IsConnected := False;
+      dtmdlADS.cnnTmp.IsConnected := False;
       FixAllMarked;
       //if (dtmdlADS.conAdsBase.IsConnected = True) then
-      dtmdlADS.conAdsBase.IsConnected := False;
+      dtmdlADS.cnnSrcAds.IsConnected := False;
     end;
   finally
     TButtonControl(Sender).Enabled := True;

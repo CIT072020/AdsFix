@@ -8,7 +8,7 @@ uses
 
 type
   TdtmdlADS = class(TDataModule)
-    conAdsBase: TAdsConnection;
+    cnnSrcAds: TAdsConnection;
     tblAds: TAdsTable;
     dsSrc: TDataSource;
     qTablesAll: TAdsQuery;
@@ -25,8 +25,7 @@ type
     FSrcAIncs: TIntegerField;
     FSrcErrNative: TIntegerField;
     FSrcFixInf: TIntegerField;
-
-    cnABTmp: TAdsConnection;
+    cnnTmp: TAdsConnection;
     qDst: TAdsQuery;
     qSrcFields: TAdsQuery;
     qSrcIndexes: TAdsQuery;
@@ -170,7 +169,7 @@ begin
   if (Assigned(Cnct)) then
     Conn := Cnct
   else
-    Conn := dtmdlADS.conAdsBase;
+    Conn := dtmdlADS.cnnSrcAds;
   SrcList := dtmdlADS.mtSrc;
 end;
 
@@ -289,7 +288,7 @@ end;
 procedure TDictList.TestSelected(ModeAll : Boolean; TMode : TestMode);
 var
   ec, i: Integer;
-  TableInf : TTableInf;
+  TableInf : TDictTable;
 begin
     // when progress bar be ready - actually
     //SrcList.DisableControls;
@@ -305,10 +304,10 @@ begin
           // все непроверенные или отмеченные
           Edit;
 
-          TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.conAdsBase, dtmdlADS.SYSTEM_ALIAS);
+          TableInf := TDictTable.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.cnnSrcAds);
           dtmdlADS.FSrcFixInf.AsInteger := Integer(TableInf);
 
-          ec := TableInf.Test1Table(TableInf, TMode);
+          ec := TableInf.Test1Table(TableInf, TMode, FPars.SysAdsPfx);
           dtmdlADS.FSrcAIncs.AsInteger := TableInf.FieldsAI.Count;
           dtmdlADS.FSrcTestCode.AsInteger := ec;
           if (ec > 0) then begin
@@ -402,7 +401,7 @@ end;
 procedure TFreeList.TestSelected(ModeAll : Boolean; TMode : TestMode);
 var
   ec, i: Integer;
-  TableInf : TTableInf;
+  TableInf : TFreeTable;
 begin
 
     with SrcList do begin
@@ -416,7 +415,7 @@ begin
           // все непроверенные или отмеченные
           Edit;
 
-          TableInf := TTableInf.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.conAdsBase, dtmdlADS.SYSTEM_ALIAS);
+          TableInf := TFreeTable.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.cnnSrcAds);
           dtmdlADS.FSrcFixInf.AsInteger := Integer(TableInf);
 
           ec := TableInf.Test1Table(TableInf, TMode);

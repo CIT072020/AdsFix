@@ -3,8 +3,9 @@ unit ServiceProc;
 interface
 
 uses
-  Windows, SysUtils, Classes, StrUtils, Forms,
+  Windows, SysUtils, Classes, StrUtils, Forms, DB,
   ShlObj,
+  adsdata,
   ace;
   
   // типы полей ADS
@@ -113,7 +114,7 @@ const
 const
   // модификатор имени файла при создании backup
   ORGPFX : string = 'tmp_';
-  
+
   CMPNT_NAME = 'tblSrcAds';
 
 const
@@ -156,6 +157,9 @@ type
   end;
 
 
+function FType2ADS(FT : TFieldType) : Integer ;
+function SQLType2ADS(SQLType : string) : Integer ;
+function SList2StrCommas(Tokens: TStringList; sKvL : string = ''''; sKvR : string = '''') : string;
 function Split(const delim, str: string): TStringList;
 function BrowseDir(hOwner: HWND; out SResultDir: string; const SDefaultDir:
   string = ''; const STitle: string = 'Выберите папку'): Boolean;
@@ -165,12 +169,57 @@ var
 
 implementation
 
+uses
+  DBFunc;
+
 function TAppPars.IsDictionary : Boolean;
 begin
   Result := False;
   if (Pos('.ADD', UpperCase(Src)) > 0) then
     Result := True;
   IsDict := Result;
+end;
+
+// Перевод TFieldType в ADS-типы (ace.pas)
+function FType2ADS(FT : TFieldType) : Integer ;
+var
+  i : Integer;
+begin
+  Result := 0;
+  for i := 0 to Length(AdsDataTypeMap) - 1 do
+    if (AdsDataTypeMap[i] = FT) then begin
+      Result := i;
+      Break;
+    end;
+end;
+
+// Перевод SQL-able типов в ADS-типы (ace.pas)
+function SQLType2ADS(SQLType : string) : Integer ;
+var
+  i : Integer;
+begin
+  Result := -1;
+  for i := 0 to Length(ArrSootv) - 1 do
+    if (ArrSootv[i].Name = SQLType) then begin
+      Result := i;
+      Break;
+    end;
+end;
+
+
+// Список строк через запятую
+function SList2StrCommas(Tokens: TStringList; sKvL : string = ''''; sKvR : string = '''') : string;
+var
+  i : Integer;
+  s : AnsiString;
+begin
+  s := '';
+  for i := 0 to Tokens.Count - 1 do
+      s := s + sKvL + Tokens.Strings[i] + sKvR + ',';
+  i := Length(s);
+  if (i > 1) then
+    Delete(s, i, 1);
+  Result := s;
 end;
 
 

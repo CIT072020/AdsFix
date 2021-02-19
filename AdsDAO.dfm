@@ -5,7 +5,7 @@ object dtmdlADS: TdtmdlADS
   Top = 217
   Height = 263
   Width = 549
-  object conAdsBase: TAdsConnection
+  object cnnSrcAds: TAdsConnection
     AdsServerTypes = [stADS_LOCAL]
     LoginPrompt = False
     Username = 'AdsSys'
@@ -14,13 +14,13 @@ object dtmdlADS: TdtmdlADS
     Top = 32
   end
   object qTablesAll: TAdsQuery
-    AdsConnection = conAdsBase
+    AdsConnection = cnnSrcAds
     Left = 104
     Top = 32
     ParamData = <>
   end
   object qAny: TAdsQuery
-    AdsConnection = conAdsBase
+    AdsConnection = cnnSrcAds
     Left = 32
     Top = 88
     ParamData = <>
@@ -114,43 +114,43 @@ object dtmdlADS: TdtmdlADS
     Top = 160
   end
   object tblAds: TAdsTable
-    AdsConnection = conAdsBase
+    AdsConnection = cnnSrcAds
     AdsTableOptions.AdsRightsCheck = False
     IndexCollationMismatch = icmIgnore
     Left = 40
     Top = 160
   end
-  object cnABTmp: TAdsConnection
+  object cnnTmp: TAdsConnection
     AdsServerTypes = [stADS_LOCAL]
     Left = 368
     Top = 32
   end
   object qDst: TAdsQuery
-    AdsConnection = cnABTmp
+    AdsConnection = cnnTmp
     Left = 424
     Top = 32
     ParamData = <>
   end
   object qSrcFields: TAdsQuery
-    AdsConnection = conAdsBase
+    AdsConnection = cnnSrcAds
     Left = 168
     Top = 32
     ParamData = <>
   end
   object qSrcIndexes: TAdsQuery
-    AdsConnection = conAdsBase
+    AdsConnection = cnnSrcAds
     Left = 176
     Top = 96
     ParamData = <>
   end
   object qDupGroups: TAdsQuery
-    AdsConnection = cnABTmp
+    AdsConnection = cnnTmp
     Left = 368
     Top = 128
     ParamData = <>
   end
   object tblTmp: TAdsTable
-    AdsConnection = cnABTmp
+    AdsConnection = cnnTmp
     Left = 432
     Top = 128
   end

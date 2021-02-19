@@ -117,7 +117,7 @@ constructor TFixUniq.Create(TI : TTableInf; Pars : TAppPars);
 begin
   SrcTbl  := TI;
   FixPars := Pars;
-  TmpConn := dtmdlADS.cnABTmp;
+  TmpConn := dtmdlADS.cnnTmp;
 
   QDups := TAdsQuery.Create(SrcTbl.AdsT.Owner);
   QDups.AdsConnection := TmpConn;
@@ -166,21 +166,6 @@ begin
     Result := '( NOT ' + Result + ' )';
 end;
 
-// Список RowID
-function RowIDs2CommList(Rows2Del: TStringList; sKv : string = '''') : string;
-var
-  i : Integer;
-  s : AnsiString;
-begin
-  s := '';
-  for i := 0 to Rows2Del.Count - 1 do
-      s := s + sKv + Rows2Del.Strings[i] + sKv + ',';
-  i := Length(s);
-  if (i > 1) then
-    Delete(s, i, 1);
-  Result := s;
-end;
-
 
 // Удалить строки по списку ROWID
 function DelByRowIds(TName, List4Del : string; Cn : TAdsConnection) : Integer;
@@ -219,8 +204,8 @@ var
 begin
   try
 
-    sIDs := RowIDs2CommList(FBadRows);
-    sFieldList := RowIDs2CommList(SrcTbl.FieldsInf, '');
+    sIDs := SList2StrCommas(FBadRows);
+    sFieldList := SList2StrCommas(SrcTbl.FieldsInf, '');
     sBeg := 'SELECT ''GDUP'' AS ' + AL_DKEY + ', ROWID, ROWNUM() AS NPP_, ''DUP'' AS RSN_, TRUE AS FDEL_, ' + sFieldList;
     sEnd := Format('FROM "%s" WHERE ROWID IN (%s) ', [SrcTbl.TableName, sIDs]);
     sEnd := sEnd + Format('; ALTER TABLE %s ALTER COLUMN %s %s CHAR(20) ALTER COLUMN RSN_ RSN_ CHAR(10)',
@@ -366,15 +351,20 @@ end;
 //    ORDER BY DUPGKEY'
 function TFixUniq.UniqRepeat(iI : Integer) : string;
 var
+  CommasList : string;
   IndInf : TIndexInf;
 begin
   IndInf := SrcTbl.IndexInf.Items[iI];
+  CommasList := SList2StrCommas(IndInf.Fields, '', '');
   Result := Format(
-    'SELECT %s.ROWID, ''%d'' + %s.ROWID AS %s%s %s',     [AL_SRC, iI, AL_DUP, AL_DKEY, AL_DUPCNTF, IndInf.AlsCommaSet]);
+    //'SELECT %s.ROWID, ''%d'' + %s.ROWID AS %s%s %s',     [AL_SRC, iI, AL_DUP, AL_DKEY, AL_DUPCNTF, IndInf.AlsCommaSet]);
+    'SELECT %s.ROWID, ''%d'' + %s.ROWID AS %s%s %s',     [AL_SRC, iI, AL_DUP, AL_DKEY, AL_DUPCNTF, SList2StrCommas(IndInf.Fields, AL_SRC + '.', '')]);
   Result := Result + Format(
-    ' FROM %s %s INNER JOIN (SELECT %s, COUNT(*) AS %s', [SrcTbl.TableName, AL_SRC, IndInf.CommaSet, AL_DUPCNT]);
+    //' FROM %s %s INNER JOIN (SELECT %s, COUNT(*) AS %s', [SrcTbl.TableName, AL_SRC, IndInf.CommaSet, AL_DUPCNT]);
+    ' FROM %s %s INNER JOIN (SELECT %s, COUNT(*) AS %s', [SrcTbl.TableName, AL_SRC, CommasList, AL_DUPCNT]);
   Result := Result + Format(
-    ' FROM %s GROUP BY %s HAVING (COUNT(*) > 1) ) %s',   [SrcTbl.TableName, IndInf.CommaSet, AL_DUP]);
+    //' FROM %s GROUP BY %s HAVING (COUNT(*) > 1) ) %s',   [SrcTbl.TableName, IndInf.CommaSet, AL_DUP]);
+    ' FROM %s GROUP BY %s HAVING (COUNT(*) > 1) ) %s',   [SrcTbl.TableName, CommasList, AL_DUP]);
   Result := Result + Format(
     ' ON %s ORDER BY %s',                                [IndInf.EquSet, AL_DKEY]);
 end;
@@ -590,14 +580,14 @@ var
 begin
   try
     //if (dtmdlADS.cnABTmp.IsConnected) then
-    dtmdlADS.cnABTmp.IsConnected := False;
+    dtmdlADS.cnnTmp.IsConnected := False;
 
-    dtmdlADS.cnABTmp.ConnectPath := AppPars.Path2Tmp;
-    dtmdlADS.cnABTmp.IsConnected := True;
+    dtmdlADS.cnnTmp.ConnectPath := AppPars.Path2Tmp;
+    dtmdlADS.cnnTmp.IsConnected := True;
 
     //if (dtmdlADS.tblTmp.Active = True) then
     dtmdlADS.tblTmp.Close;
-    dtmdlADS.tblTmp.AdsConnection := dtmdlADS.cnABTmp;
+    dtmdlADS.tblTmp.AdsConnection := dtmdlADS.cnnTmp;
 
     FixState := FIX_GOOD;
     SrcTbl.RowsFixed := 0;
@@ -920,7 +910,7 @@ begin
       Next;
     end;
     First;
-    dtmdlADS.conAdsBase.Disconnect;
+    dtmdlADS.cnnSrcAds.Disconnect;
   end;
 
 end;
@@ -1011,8 +1001,8 @@ var
 begin
 
   if (Ptr2TableInf = 0) then begin
-    SrcTbl := TTableInf.Create(TName, TID, Q.AdsConnection, FixPars.SysAdsPfx);
-    ec := SrcTbl.Test1Table(SrcTbl, FixPars.TMode);
+    SrcTbl := TTableInf.Create(TName, TID, Q.AdsConnection);
+    ec := SrcTbl.Test1Table(SrcTbl, FixPars.TMode, FixPars.SysAdsPfx);
   end
   else begin
     SrcTbl := TTableInf(Ptr(Ptr2TableInf));

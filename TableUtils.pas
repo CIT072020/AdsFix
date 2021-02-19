@@ -21,8 +21,8 @@ type
     Options: Integer;
     Expr: string;
     Fields: TStringList;
-    CommaSet : string;
-    AlsCommaSet : string;
+    //CommaSet : string;
+    //AlsCommaSet : string;
     EquSet : string;
     IndFieldsAdr: array of integer;
   end;
@@ -78,9 +78,9 @@ type
   // описание ADS-таблицы для восстановления
   TTableInf = class(TInterfacedObject)
   private
-    FSysPfx   : string;
-    procedure FieldsInfo(Q : TAdsQuery);
-    procedure IndexesInf(SrcTbl: TTableInf; QWork : TAdsQuery);
+    //FSysPfx   : string;
+    procedure FieldsInfo(Q : TAdsQuery); virtual;
+    procedure IndexesInf(SrcTbl: TTableInf; QWork : TAdsQuery); virtual;
   public
     TableName : string;
     // Путь к словарю
@@ -122,11 +122,25 @@ type
     TotalDel  : Integer;
     RowsFixed : Integer;
 
-    constructor Create(TName : string; TID : Integer; Conn: TAdsConnection; AnsiPfx : string);
-    destructor Destroy; override;
+    //function Test1Table(AdsTI : TTableInf; Check: TestMode): Integer; virtual;
+    function Test1Table(AdsTI : TTableInf; Check: TestMode; SysAnsi : string): Integer; virtual;
 
-    function Test1Table(AdsTI : TTableInf; Check: TestMode): Integer;
+    //constructor Create(TName : string; TID : Integer; Conn: TAdsConnection; AnsiPfx : string);
+    constructor Create(TName : string; TID : Integer; Conn: TAdsConnection);
+    destructor Destroy; override;
   end;
+
+  TDictTable = class(TTableInf)
+  end;
+
+  TFreeTable = class(TTableInf)
+  private
+    procedure FieldsInfo(Q : TAdsQuery);
+    procedure IndexesInf(SrcTbl: TTableInf; QWork : TAdsQuery);
+  public
+    function Test1Table(AdsTI : TFreeTable; Check: TestMode): Integer;
+  end;
+
 
 procedure Read1Rec(Rec: TFields);
 function Read1RecEx(Fields: TFields; FInf: TStringList) : TBadRec;
@@ -155,7 +169,7 @@ begin
     end;
 end;
 
-constructor TTableInf.Create(TName : string; TID : Integer; Conn: TAdsConnection; AnsiPfx : string);
+constructor TTableInf.Create(TName : string; TID : Integer; Conn: TAdsConnection);
 var
   cName : string;
   T : TAdsTable;
@@ -177,13 +191,13 @@ begin
 
   Self.AdsT.TableName := TName;
 
-  Self.FSysPfx := AnsiPfx;
+  //Self.FSysPfx := AnsiPfx;
 
   FieldsInf  := TStringList.Create;
   FieldsAI   := TStringList.Create;
   IndexInf   := TList.Create;
   BackUps    := TStringList.Create;
-  
+
   NeedBackUp := True;
 
   ErrInfo   := TErrInfo.Create;
@@ -200,43 +214,14 @@ begin
   inherited Destroy;
 end;
 
-function FType2ADS(FT : TFieldType) : Integer ;
-var
-  i : Integer;
-begin
-  Result := 0;
-  for i := 0 to Length(AdsDataTypeMap) - 1 do
-    if (AdsDataTypeMap[i] = FT) then begin
-      Result := i;
-      Break;
-    end;
-end;
 
 
-// сведения о полях одной таблицы (SQL)
+// сведения о полях одной таблицы (Select из dictionary)
 procedure TTableInf.FieldsInfo(Q : TAdsQuery);
 var
-  i : Integer;
   OneField: TFieldsInf;
 begin
   with Q do begin
-
-    SQL.Clear;
-    SQL.Add( Format('SELECT TOP 1 * FROM "%s" WHERE (False)' , [TableName]) );
-    Active := True;
-    for i := 0 to FieldDefs.Count - 1 do begin
-      OneField := TFieldsInf.Create;
-      OneField.Name      := FieldDefs[i].Name;
-      OneField.FieldType := FType2ADS(FieldDefs[i].DataType);
-      OneField.TypeSQL   := ArrSootv[OneField.FieldType].Name;
-      if (OneField.FieldType = ADS_AUTOINC) then
-        FieldsAI.Add(OneField.Name);
-      FieldsInf.AddObject(OneField.Name, OneField);
-    end;
-
-{
-    SQL.Clear;
-    SQL.Add( Format('SELECT * FROM %sCOLUMNS WHERE PARENT=''%s''' , [FSysPfx, TableName]) );
     Active := True;
     First;
     while not Eof do begin
@@ -246,15 +231,44 @@ begin
       OneField.TypeSQL   := ArrSootv[OneField.FieldType].Name;
       if (OneField.FieldType = ADS_AUTOINC) then
         FieldsAI.Add(OneField.Name);
-      FieldsInf.AddObject(FieldByName('Name').AsString, OneField);
+      FieldsInf.AddObject(OneField.Name, OneField);
       Next;
     end;
-}
     Close;
     AdsCloseSQLStatement;
     AdsConnection.CloseCachedTables;
   end;
 end;
+
+// сведения о полях одной таблицы (EXEC sp_GetColumns)
+procedure TFreeTable.FieldsInfo(Q : TAdsQuery);
+var
+  i : Integer;
+  OneField: TFieldsInf;
+begin
+  with Q do begin
+    SQL.Clear;
+    SQL.Add( Format('SELECT * FROM (EXECUTE PROCEDURE sp_GetColumns(NULL,NULL,''%s'',''%s'')) AS Cols', [TableName, '%']) );
+
+    Active := True;
+    First;
+    while not Eof do begin
+      OneField := TFieldsInf.Create;
+      OneField.Name      := FieldByName('COLUMN_NAME').AsString;
+      OneField.TypeSQL   := FieldByName('TYPE_NAME').AsString;
+      OneField.FieldType := SQLType2ADS(OneField.TypeSQL);
+      if (OneField.FieldType = ADS_AUTOINC) then
+        FieldsAI.Add(OneField.Name);
+      FieldsInf.AddObject(OneField.Name, OneField);
+      Next;
+    end;
+
+    Close;
+    AdsCloseSQLStatement;
+    AdsConnection.CloseCachedTables;
+  end;
+end;
+
 
 // Убрать из выражения индекса направления сортировки
 procedure ClearFieldInExp(Flds: TStringList);
@@ -277,25 +291,17 @@ end;
 procedure TTableInf.IndexesInf(SrcTbl: TTableInf; QWork : TAdsQuery);
 var
   i, j: Integer;
-  CommaList: string;
   OneInd : TIndexInf;
 label
   QFor;
 begin
   with QWork do begin
-    if Active then
-      Close;
-    // все уникальные индексы
-    SQL.Text := 'SELECT INDEX_OPTIONS, INDEX_EXPRESSION, PARENT FROM ' +
-      FSysPfx + 'INDEXES WHERE (PARENT = ''' + SrcTbl.TableName +
-      ''') AND ((INDEX_OPTIONS & 1) = 1)';
     Active := True;
     SrcTbl.IndCount := RecordCount;
     First;
     while not Eof do begin
       OneInd := TIndexInf.Create;
       OneInd.Options := FieldByName('INDEX_OPTIONS').AsInteger;
-      //OneInd.Expr := FieldByName('INDEX_EXPRESSION').AsInteger;
       OneInd.Fields := TStringList.Create;
       OneInd.Fields.Delimiter := ';';
       OneInd.Fields.DelimitedText := FieldByName('INDEX_EXPRESSION').AsString;
@@ -303,18 +309,18 @@ begin
 
       SetLength(OneInd.IndFieldsAdr, OneInd.Fields.Count);
 
-      CommaList := '';
-      OneInd.AlsCommaSet := '';
+      //CommaList := '';
+      //OneInd.AlsCommaSet := '';
       OneInd.EquSet := '';
       for j := 0 to OneInd.Fields.Count - 1 do begin
         if (j > 0) then begin
-          CommaList := CommaList + ',';
-          OneInd.AlsCommaSet := OneInd.AlsCommaSet + ',';
+          //CommaList := CommaList + ',';
+          //OneInd.AlsCommaSet := OneInd.AlsCommaSet + ',';
           OneInd.EquSet := OneInd.EquSet + ' AND ';
         end;
 
-        CommaList := CommaList + OneInd.Fields[j];
-        OneInd.AlsCommaSet := OneInd.AlsCommaSet + AL_SRC + '.' + OneInd.Fields[j];
+        //CommaList := CommaList + OneInd.Fields[j];
+        //OneInd.AlsCommaSet := OneInd.AlsCommaSet + AL_SRC + '.' + OneInd.Fields[j];
         OneInd.EquSet := OneInd.EquSet + '(' + AL_SRC + '.' + OneInd.Fields[j] + '=' + AL_DUP + '.' + OneInd.Fields[j] + ')';
         for i := 0 to SrcTbl.FieldsInf.Count - 1 do
           //if (TFieldsInf(SrcTbl.FieldsInf[i]).Name = OneInd.Fields[j]) then begin
@@ -325,7 +331,7 @@ begin
           end;
       end;
 QFor:
-      OneInd.CommaSet := CommaList;
+      //OneInd.CommaSet := CommaList;
 
       SrcTbl.IndexInf.Add(OneInd);
       Next;
@@ -334,8 +340,17 @@ QFor:
     AdsCloseSQLStatement;
     AdsConnection.CloseCachedTables;
   end;
-
 end;
+
+
+// сведения об индексах одной таблицы (SQL)
+procedure TFreeTable.IndexesInf(SrcTbl: TTableInf; QWork : TAdsQuery);
+label
+  QFor;
+begin
+  SrcTbl.IndCount := 0;
+end;
+
 
 // подбор простейших полей для ALTER
 function Field4Alter(AdsTI: TTableInf): integer;
@@ -489,8 +504,97 @@ end;
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // тестирование одной таблицы на ошибки
-function TTableInf.Test1Table(AdsTI : TTableInf; Check: TestMode): Integer;
+function TTableInf.Test1Table(AdsTI : TTableInf; Check: TestMode; SysAnsi : string): Integer;
+var
+  iFld, ec: Integer;
+  TypeName, s: string;
+  ErrInf: TStringList;
+  AdsFT: UNSIGNED16;
+  Conn : TAdsConnection;
+  QWork : TAdsQuery;
+begin
+  Result := 0;
+  if (AdsTI.AdsT.Active) then
+    AdsTI.AdsT.Close;
+
+  try
+    Conn := AdsTI.AdsT.AdsConnection;
+    QWork := TAdsQuery.Create(AdsTI.AdsT.Owner);
+    QWork.AdsConnection := Conn;
+    QWork.SQL.Add( Format('SELECT * FROM %sCOLUMNS WHERE PARENT=''%s''' , [SysAnsi, TableName]) );
+
+    FieldsInfo(QWork);
+    // все уникальные индексы
+    QWork.SQL.Text := 'SELECT INDEX_OPTIONS, INDEX_EXPRESSION, PARENT FROM ' + SysAnsi + 'INDEXES WHERE (PARENT = ''' + TableName + ''') AND ((INDEX_OPTIONS & 1) = 1)';
+    IndexesInf(AdsTI, QWork);
+    AdsTI.RecCount := RecsBySQL(QWork, AdsTI.TableName);
+    AdsTI.ErrInfo.State := TST_UNKNOWN;
+
+    // Easy Mode and others
+    AdsTI.AdsT.Open;
+    PositionSomeRecs(AdsTI.AdsT, AdsTI.FieldsInf, Check);
+    AdsTI.AdsT.Close;
+
+    if (Check = Medium)
+      OR (Check = Slow) then begin
+      s := 'EXECUTE PROCEDURE sp_Reindex(''' + AdsTI.TableName + '.adt'',0)';
+      Conn.Execute(s);
+
+      if (Check = Slow) then begin
+
+          if (AdsTI.IndCount > 0) then begin
+        // есть уникальные индексы
+            iFld := Field4Alter(AdsTI);
+            if (iFld >= 0) then begin
+              s := AdsTI.FieldsInf[iFld];
+              s := 'ALTER TABLE ' + AdsTI.TableName + ' ALTER COLUMN ' + s + ' ' + s + ' ' + TFieldsInf(AdsTI.FieldsInf.Objects[iFld]).TypeSQL;
+              Conn.Execute(s);
+              s := IncludeTrailingPathDelimiter(Conn.GetConnectionPath) + AdsTI.TableName + '*.BAK';
+              DeleteFiles(s);
+            end;
+          end;
+
+        // Realy need?
+        AdsTI.AdsT.PackTable;
+      end;
+
+    end;
+    AdsTI.ErrInfo.State := TST_GOOD;
+
+  except
+    on E: EADSDatabaseError do begin
+      Result := E.ACEErrorCode;
+      AdsTI.ErrInfo.ErrClass  := E.ACEErrorCode;
+      AdsTI.ErrInfo.NativeErr := E.SQLErrorCode;
+      AdsTI.ErrInfo.MsgErr    := E.Message;
+      AdsTI.ErrInfo.State     := TST_ERRORS;
+    end;
+  end;
+
+end;
+
+// тестирование одной таблицы на ошибки
+function TFreeTable.Test1Table(AdsTI : TFreeTable; Check: TestMode): Integer;
 var
   iFld, ec: Integer;
   TypeName, s: string;
@@ -520,13 +624,14 @@ begin
 
     if (Check = Medium)
       OR (Check = Slow) then begin
-      s := 'EXECUTE PROCEDURE sp_Reindex(''' + AdsTI.TableName + '.adt'',0)';
-      Conn.Execute(s);
+      //s := 'EXECUTE PROCEDURE sp_Reindex(''' + AdsTI.TableName + '.adt'',0)';
+      //Conn.Execute(s);
 
       if (Check = Slow) then begin
 
           if (AdsTI.IndCount > 0) then begin
         // есть уникальные индексы
+{
             iFld := Field4Alter(AdsTI);
             if (iFld >= 0) then begin
               s := AdsTI.FieldsInf[iFld];
@@ -535,6 +640,7 @@ begin
               s := IncludeTrailingPathDelimiter(Conn.GetConnectionPath) + AdsTI.TableName + '*.BAK';
               DeleteFiles(s);
             end;
+}
           end;
 
         // Realy need?
