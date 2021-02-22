@@ -357,13 +357,10 @@ begin
   IndInf := SrcTbl.IndexInf.Items[iI];
   CommasList := SList2StrCommas(IndInf.Fields, '', '');
   Result := Format(
-    //'SELECT %s.ROWID, ''%d'' + %s.ROWID AS %s%s %s',     [AL_SRC, iI, AL_DUP, AL_DKEY, AL_DUPCNTF, IndInf.AlsCommaSet]);
     'SELECT %s.ROWID, ''%d'' + %s.ROWID AS %s%s %s',     [AL_SRC, iI, AL_DUP, AL_DKEY, AL_DUPCNTF, SList2StrCommas(IndInf.Fields, AL_SRC + '.', '')]);
   Result := Result + Format(
-    //' FROM %s %s INNER JOIN (SELECT %s, COUNT(*) AS %s', [SrcTbl.TableName, AL_SRC, IndInf.CommaSet, AL_DUPCNT]);
     ' FROM %s %s INNER JOIN (SELECT %s, COUNT(*) AS %s', [SrcTbl.TableName, AL_SRC, CommasList, AL_DUPCNT]);
   Result := Result + Format(
-    //' FROM %s GROUP BY %s HAVING (COUNT(*) > 1) ) %s',   [SrcTbl.TableName, IndInf.CommaSet, AL_DUP]);
     ' FROM %s GROUP BY %s HAVING (COUNT(*) > 1) ) %s',   [SrcTbl.TableName, CommasList, AL_DUP]);
   Result := Result + Format(
     ' ON %s ORDER BY %s',                                [IndInf.EquSet, AL_DKEY]);
@@ -646,17 +643,27 @@ end;
 function PrepTable(P2Src, P2TMP : string; SrcTbl: TTableInf): Integer;
 var
   s,
+  ExtADT,
+  ExtADM,
   FileSrc,
   FileDst: string;
 begin
   Result := UE_BAD_PREP;
+  if (SrcTbl.IsFree = True) then begin
+    ExtADT := '';
+    ExtADM := '';
+  end
+  else begin
+    ExtADT := '.adt';
+    ExtADM := '.adm'
+  end;
   try
     FileSrc := P2Src + SrcTbl.TableName;
-    SrcTbl.FileTmp := P2TMP + SrcTbl.TableName + '.adt';
+    SrcTbl.FileTmp := P2TMP + SrcTbl.TableName + ExtADT;
     s := FileSrc + '.adt';
     if (CopyOneFile(s, P2TMP) <> 0) then
       raise Exception.Create('Ошибка копирования ' + s);
-    s := FileSrc + '.adm';
+    s := FileSrc + ExtADM;
     if FileExists(s) then begin
       if (CopyOneFile(s, P2TMP) <> 0) then
         raise Exception.Create('Ошибка копирования ' + s);

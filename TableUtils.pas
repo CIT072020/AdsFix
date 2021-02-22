@@ -16,13 +16,12 @@ type
     TypeSQL   : string;
   end;
 
-  // описание одного индекса
+  // описание одного индекса, интересуют только уникальные
   TIndexInf = class
     Options: Integer;
-    Expr: string;
+    //Expr: string;
     Fields: TStringList;
-    //CommaSet : string;
-    //AlsCommaSet : string;
+    // Условие для ON-token при поиске дубликатов
     EquSet : string;
     IndFieldsAdr: array of integer;
   end;
@@ -80,8 +79,9 @@ type
   private
     //FSysPfx   : string;
     procedure FieldsInfo(Q : TAdsQuery); virtual;
-    procedure IndexesInf(SrcTbl: TTableInf; QWork : TAdsQuery); virtual;
+    procedure IndexesInfo(SrcTbl: TTableInf; QWork : TAdsQuery); virtual;
   public
+    IsFree    : Boolean;
     TableName : string;
     // Путь к словарю
     Path2Src  : string;
@@ -136,9 +136,10 @@ type
   TFreeTable = class(TTableInf)
   private
     procedure FieldsInfo(Q : TAdsQuery);
-    procedure IndexesInf(SrcTbl: TTableInf; QWork : TAdsQuery);
+    procedure IndexesInfo(SrcTbl: TTableInf; Q : TAdsQuery);
   public
     function Test1Table(AdsTI : TFreeTable; Check: TestMode): Integer;
+    constructor Create(TName : string; TID : Integer; Conn: TAdsConnection); overload;
   end;
 
 
@@ -176,6 +177,7 @@ var
 begin
   inherited Create;
 
+  IsFree := False;
   Self.TableName := TName;
   Self.Path2Src  := IncludeTrailingPathDelimiter(Conn.GetConnectionPath);
 
@@ -214,7 +216,11 @@ begin
   inherited Destroy;
 end;
 
-
+constructor TFreeTable.Create(TName : string; TID : Integer; Conn: TAdsConnection);
+begin
+  inherited Create(TName, TID, Conn);
+  IsFree := True;
+end;
 
 // сведения о полях одной таблицы (Select из dictionary)
 procedure TTableInf.FieldsInfo(Q : TAdsQuery);
@@ -288,12 +294,10 @@ begin
 end;
 
 // сведения об индексах одной таблицы (SQL)
-procedure TTableInf.IndexesInf(SrcTbl: TTableInf; QWork : TAdsQuery);
+procedure TTableInf.IndexesInfo(SrcTbl: TTableInf; QWork : TAdsQuery);
 var
   i, j: Integer;
   OneInd : TIndexInf;
-label
-  QFor;
 begin
   with QWork do begin
     Active := True;
@@ -309,29 +313,18 @@ begin
 
       SetLength(OneInd.IndFieldsAdr, OneInd.Fields.Count);
 
-      //CommaList := '';
-      //OneInd.AlsCommaSet := '';
       OneInd.EquSet := '';
       for j := 0 to OneInd.Fields.Count - 1 do begin
-        if (j > 0) then begin
-          //CommaList := CommaList + ',';
-          //OneInd.AlsCommaSet := OneInd.AlsCommaSet + ',';
+        if (j > 0) then
           OneInd.EquSet := OneInd.EquSet + ' AND ';
-        end;
-
-        //CommaList := CommaList + OneInd.Fields[j];
-        //OneInd.AlsCommaSet := OneInd.AlsCommaSet + AL_SRC + '.' + OneInd.Fields[j];
         OneInd.EquSet := OneInd.EquSet + '(' + AL_SRC + '.' + OneInd.Fields[j] + '=' + AL_DUP + '.' + OneInd.Fields[j] + ')';
+
         for i := 0 to SrcTbl.FieldsInf.Count - 1 do
-          //if (TFieldsInf(SrcTbl.FieldsInf[i]).Name = OneInd.Fields[j]) then begin
           if (SrcTbl.FieldsInf[i] = OneInd.Fields[j]) then begin
             OneInd.IndFieldsAdr[j] := i;
-            //goto QFor;
             Break;
           end;
       end;
-QFor:
-      //OneInd.CommaSet := CommaList;
 
       SrcTbl.IndexInf.Add(OneInd);
       Next;
@@ -344,12 +337,59 @@ end;
 
 
 // сведения об индексах одной таблицы (SQL)
-procedure TFreeTable.IndexesInf(SrcTbl: TTableInf; QWork : TAdsQuery);
-label
-  QFor;
+procedure TFreeTable.IndexesInfo(SrcTbl: TTableInf; Q: TAdsQuery);
+var
+  opt: TIndexOptions;
+  j, k, i: Integer;
+  OneInd: TIndexInf;
 begin
   SrcTbl.IndCount := 0;
+  try
+    SrcTbl.AdsT.Active := True;
+    with SrcTbl.AdsT do begin
+    //SQL.Clear;
+    //SQL.Add( Format('SELECT TOP 1 * FROM "%s" AS Indexes', [TableName]));
+    //Active := True;
+      for k := 0 to IndexDefs.Count - 1 do begin
+        if (ixUnique in IndexDefs.Items[k].Options) then begin
+
+          OneInd := TIndexInf.Create;
+          OneInd.Options := 1;
+          OneInd.Fields := TStringList.Create;
+          OneInd.Fields.Delimiter := ';';
+          OneInd.Fields.DelimitedText := IndexDefs.Items[k].Fields;
+          ClearFieldInExp(OneInd.Fields);
+
+          SetLength(OneInd.IndFieldsAdr, OneInd.Fields.Count);
+
+          OneInd.EquSet := '';
+          for j := 0 to OneInd.Fields.Count - 1 do begin
+            if (j > 0) then
+              OneInd.EquSet := OneInd.EquSet + ' AND ';
+            OneInd.EquSet := OneInd.EquSet + '(' + AL_SRC + '.' + OneInd.Fields[j] + '=' + AL_DUP + '.' + OneInd.Fields[j] + ')';
+
+            for i := 0 to SrcTbl.FieldsInf.Count - 1 do
+              if (SrcTbl.FieldsInf[i] = OneInd.Fields[j]) then begin
+                OneInd.IndFieldsAdr[j] := i;
+                Break;
+              end;
+          end;
+          SrcTbl.IndexInf.Add(OneInd);
+        end;
+
+      end;
+      SrcTbl.IndCount := SrcTbl.IndexInf.Count;
+
+    //AdsCloseSQLStatement;
+    //AdsConnection.CloseCachedTables;
+    end;
+    SrcTbl.AdsT.Active := False;
+  except
+    SrcTbl.IndCount := 0;
+  end;
 end;
+
+
 
 
 // подбор простейших полей для ALTER
@@ -490,7 +530,7 @@ begin
   try
     Q.Close;
     Q.SQL.Clear;
-    Q.SQL.Text := 'SELECT COUNT(*) FROM ' + TName;
+    Q.SQL.Text := Format('SELECT COUNT(*) FROM "%s"', [TName]);
     Q.Active := True;
     if (Q.RecordCount > 0) then
       Result := Q.Fields[0].Value;
@@ -546,7 +586,7 @@ begin
     FieldsInfo(QWork);
     // все уникальные индексы
     QWork.SQL.Text := 'SELECT INDEX_OPTIONS, INDEX_EXPRESSION, PARENT FROM ' + SysAnsi + 'INDEXES WHERE (PARENT = ''' + TableName + ''') AND ((INDEX_OPTIONS & 1) = 1)';
-    IndexesInf(AdsTI, QWork);
+    IndexesInfo(AdsTI, QWork);
     AdsTI.RecCount := RecsBySQL(QWork, AdsTI.TableName);
     AdsTI.ErrInfo.State := TST_UNKNOWN;
 
@@ -613,7 +653,7 @@ begin
     QWork.AdsConnection := Conn;
 
     FieldsInfo(QWork);
-    IndexesInf(AdsTI, QWork);
+    IndexesInfo(AdsTI, QWork);
     AdsTI.RecCount := RecsBySQL(QWork, AdsTI.TableName);
     AdsTI.ErrInfo.State := TST_UNKNOWN;
 
@@ -621,6 +661,11 @@ begin
     AdsTI.AdsT.Open;
     PositionSomeRecs(AdsTI.AdsT, AdsTI.FieldsInf, Check);
     AdsTI.AdsT.Close;
+    if (AdsTI.IndexInf.Count > 0) then begin
+      s := Format('EXECUTE PROCEDURE sp_Reindex(''%s'',0)', [AdsTI.TableName]);
+      Conn.Execute(s);
+    end;
+
 
     if (Check = Medium)
       OR (Check = Slow) then begin
@@ -629,7 +674,7 @@ begin
 
       if (Check = Slow) then begin
 
-          if (AdsTI.IndCount > 0) then begin
+          if (AdsTI.IndexInf.Count > 0) then begin
         // есть уникальные индексы
 {
             iFld := Field4Alter(AdsTI);
