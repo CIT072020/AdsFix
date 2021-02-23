@@ -172,7 +172,7 @@ function DelByRowIds(TName, List4Del : string; Cn : TAdsConnection) : Integer;
 var
   s : string;
 begin
-  s := Format('DELETE FROM %s WHERE ROWID IN (%s)', [TName, List4Del]);
+  s := Format('DELETE FROM "%s" WHERE ROWID IN (%s)', [TName, List4Del]);
   Result := Cn.Execute(s);
 end;
 
@@ -205,7 +205,7 @@ begin
   try
 
     sIDs := SList2StrCommas(FBadRows);
-    sFieldList := SList2StrCommas(SrcTbl.FieldsInf, '');
+    sFieldList := SList2StrCommas(SrcTbl.FieldsInf, '', '');
     sBeg := 'SELECT ''GDUP'' AS ' + AL_DKEY + ', ROWID, ROWNUM() AS NPP_, ''DUP'' AS RSN_, TRUE AS FDEL_, ' + sFieldList;
     sEnd := Format('FROM "%s" WHERE ROWID IN (%s) ', [SrcTbl.TableName, sIDs]);
     sEnd := sEnd + Format('; ALTER TABLE %s ALTER COLUMN %s %s CHAR(20) ALTER COLUMN RSN_ RSN_ CHAR(10)',
@@ -300,7 +300,7 @@ begin
     j := IndInf.IndFieldsAdr[i];
     s := s + EmptyFCond(IndInf.Fields.Strings[i], TFieldsInf(SrcTbl.FieldsInf.Objects[j]).FieldType);
   end;
-  Result := Format('SELECT ROWID FROM %s WHERE %s', [SrcTbl.TableName, s]);
+  Result := Format('SELECT ROWID FROM "%s" WHERE %s', [SrcTbl.TableName, s]);
 end;
 
 // поиск и удаление пустых [под]ключей
@@ -359,9 +359,9 @@ begin
   Result := Format(
     'SELECT %s.ROWID, ''%d'' + %s.ROWID AS %s%s %s',     [AL_SRC, iI, AL_DUP, AL_DKEY, AL_DUPCNTF, SList2StrCommas(IndInf.Fields, AL_SRC + '.', '')]);
   Result := Result + Format(
-    ' FROM %s %s INNER JOIN (SELECT %s, COUNT(*) AS %s', [SrcTbl.TableName, AL_SRC, CommasList, AL_DUPCNT]);
+    ' FROM "%s" %s INNER JOIN (SELECT %s, COUNT(*) AS %s', [SrcTbl.TableName, AL_SRC, CommasList, AL_DUPCNT]);
   Result := Result + Format(
-    ' FROM %s GROUP BY %s HAVING (COUNT(*) > 1) ) %s',   [SrcTbl.TableName, CommasList, AL_DUP]);
+    ' FROM "%s" GROUP BY %s HAVING (COUNT(*) > 1) ) %s',   [SrcTbl.TableName, CommasList, AL_DUP]);
   Result := Result + Format(
     ' ON %s ORDER BY %s',                                [IndInf.EquSet, AL_DKEY]);
 end;
@@ -404,7 +404,8 @@ begin
       sField := AdsTbl.FieldsInf[i];
       FT := TFieldsInf(AdsTbl.FieldsInf.Objects[i]).FieldType;
       sEmpCond := EmptyFCond(sField, FT, True);
-      s := 'SELECT ' + sField + ' FROM ' + AdsTbl.TableName + s4All + sEmpCond;
+      //s := 'SELECT ' + sField + ' FROM ' + AdsTbl.TableName + s4All + sEmpCond;
+      s := Format('SELECT %s FROM "%s" %s %s', [sField, AdsTbl.TableName, s4All, sEmpCond]);
       Q1F.SQL.Clear;
       Q1F.SQL.Add(s);
       Q1F.Active := True;
@@ -640,40 +641,37 @@ begin
 end;
 
 // Копия оригинала и освобождение таблицы
-function PrepTable(P2Src, P2TMP : string; SrcTbl: TTableInf): Integer;
+function PrepTable(P2Src, P2TMP: string; SrcTbl: TTableInf): Integer;
 var
-  s,
-  ExtADT,
-  ExtADM,
-  FileSrc,
-  FileDst: string;
+  s, FileSrc, FileSrcNoExt, FileDst: string;
 begin
-  Result := UE_BAD_PREP;
-  if (SrcTbl.IsFree = True) then begin
-    ExtADT := '';
-    ExtADM := '';
-  end
-  else begin
-    ExtADT := '.adt';
-    ExtADM := '.adm'
-  end;
+  Result   := UE_BAD_PREP;
+
+  // Группа файлов в источнике
+  FileSrc := P2Src + SrcTbl.NameNoExt;
+
   try
-    FileSrc := P2Src + SrcTbl.TableName;
-    SrcTbl.FileTmp := P2TMP + SrcTbl.TableName + ExtADT;
-    s := FileSrc + '.adt';
+    SrcTbl.FileTmp := P2TMP + SrcTbl.NameNoExt + ExtADT;
+
+    s := FileSrc + ExtADT;
     if (CopyOneFile(s, P2TMP) <> 0) then
       raise Exception.Create('Ошибка копирования ' + s);
+
     s := FileSrc + ExtADM;
     if FileExists(s) then begin
       if (CopyOneFile(s, P2TMP) <> 0) then
         raise Exception.Create('Ошибка копирования ' + s);
     end;
-    if AdsDDFreeTable(PAnsiChar(SrcTbl.FileTmp), nil) = AE_FREETABLEFAILED then
-      raise EADSDatabaseError.Create(SrcTbl.AdsT, UE_BAD_PREP, 'Ошибка освобождения таблицы');
+
+      if AdsDDFreeTable(PAnsiChar(SrcTbl.FileTmp), nil) = AE_FREETABLEFAILED then
+        if (SrcTbl.IsFree = False) then
+        // Словарная таблица обязательно освобождается
+          raise EADSDatabaseError.Create(SrcTbl.AdsT, UE_BAD_PREP, 'Ошибка освобождения таблицы');
+
     SrcTbl.ErrInfo.PrepErr := 0;
     Result := 0;
   except
-    SrcTbl.ErrInfo.State   := FIX_ERRORS;
+    SrcTbl.ErrInfo.State := FIX_ERRORS;
     SrcTbl.ErrInfo.PrepErr := UE_BAD_PREP;
   end;
 end;
@@ -786,10 +784,28 @@ var
   FileSrc, FileDst, TmpName, ss, sd: string;
   Span: TSpan;
   Conn: TAdsConnection;
+
+
+function BackUpOne(Ext: string) : Boolean;
+begin
+  ss := FileSrc + Ext;
+  sd := TmpName + Ext;
+  if (SrcTbl.IsFree) then
+    Result := (CopyOneFile(ss, sd) = 0)
+  else
+    Result := RenameFile(ss, sd);
+  if (Result = True) then
+    SrcTbl.BackUps.Add(sd)
+  else
+    raise Exception.Create('Ошибка дубликата - ' + ss);
+end;
+
+
 begin
   Result := False;
   SrcTbl.ErrInfo.State := INS_ERRORS;
   SrcTbl.ErrInfo.InsErr := UE_BAD_INS;
+
   try
     SrcTbl.AdsT.Active := False;
     Conn := SrcTbl.AdsT.AdsConnection;
@@ -798,48 +814,68 @@ begin
     ecb := True;
     ErrAdm := True;
 
-    FileSrc := P2Src + SrcTbl.TableName;
-    FileDst := P2Tmp + SrcTbl.TableName + '.adt';
+    FileSrc := P2Src + SrcTbl.NameNoExt;
+    FileDst := P2Tmp + SrcTbl.NameNoExt + ExtADT;
 
     if (SrcTbl.NeedBackUp = True) then begin
     // Перед вставкой сделать копию
-      TmpName := P2Src + ORGPFX + SrcTbl.TableName;
+      TmpName := P2Src + ORGPFX + SrcTbl.NameNoExt;
       ecb := DeleteFiles(TmpName + '.*');
 
-      if FileExists(FileSrc + '.adi') then
-        ecb := DeleteFiles(FileSrc + '.adi');
-
-      ss := FileSrc + '.adt';
-      sd := TmpName + '.adt';
-      ecb := RenameFile(ss, sd);
+      if FileExists(FileSrc + ExtADI) then
+        if (SrcTbl.IsFree = True) then
+          ecb := BackUpOne(ExtADI)
+        else
+          ecb := DeleteFiles(FileSrc + ExtADI);
+{
+      ss := FileSrc + ExtADT;
+      sd := TmpName + ExtADT;
+      if (SrcTbl.IsFree) then
+        ecb := (CopyOneFile(ss, sd) = 0)
+      else
+        ecb := RenameFile(ss, sd);
       if (ecb = True) then
         SrcTbl.BackUps.Add(sd);
-
-      if FileExists(FileSrc + '.adm') then begin
-        ss := FileSrc + '.adm';
-        sd := TmpName + '.adm';
-        ErrAdm := RenameFile(ss, sd);
+}
+       ecb := ecb and BackUpOne(ExtADT);
+      if FileExists(FileSrc + ExtADM) then begin
+{
+        ss := FileSrc + ExtADM;
+        sd := TmpName + ExtADM;
+        if (SrcTbl.IsFree) then
+          ErrAdm := (CopyOneFile(ss, sd) = 0)
+        else
+          ErrAdm := RenameFile(ss, sd);
         if (ErrAdm = True) then
           SrcTbl.BackUps.Add(sd);
+}
+        ErrAdm := BackUpOne(ExtADM);
       end;
+    end;
+
+    Conn.IsConnected := True;
+    // Очистить таблицу
+    if (Conn.IsDictionaryConn = False) then begin
+      Conn.Execute(Format('DELETE FROM "%s"', [SrcTbl.TableName]));
     end
-    else  // Удалить таблицу + Memo + index
+    else begin
+    // Удалить таблицу + Memo + index
       ecb := DeleteFiles(FileSrc + '.ad?');
-
-    if (ecb = True) and (ErrAdm = True) then begin
+      if (ecb = True) and (ErrAdm = True) then begin
   //--- Auto-create empty table
-      SrcTbl.AdsT.AdsConnection.IsConnected := True;
-      SrcTbl.AdsT.Active := True;
-      SrcTbl.AdsT.Active := False;
+        SrcTbl.AdsT.Active := True;
+        SrcTbl.AdsT.Active := False;
   //---
-
+      end;
+    end;
       try
         // врЕменная замена AUTOINC на INTEGER
         if (ChangeAI(SrcTbl, ' INTEGER', Conn) = True) then begin
           SrcTbl.ErrInfo.TotalIns := 0;
           if (SrcTbl.GoodSpans.Count <= 0) then begin
         // Загрузка оптом
-            ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT * FROM "' + FileDst + '" SRC';
+            //ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT * FROM "' + FileDst + '" SRC';
+            ss := Format('INSERT INTO "%s" SELECT * FROM "%s" SRC', [SrcTbl.TableName, FileDst]);
             if (Length(SrcTbl.DmgdRIDs) > 0) then
               ss := ss + ' WHERE SRC.ROWID NOT IN (' + SrcTbl.DmgdRIDs + ')';
             SrcTbl.ErrInfo.TotalIns := Conn.Execute(ss);
@@ -848,7 +884,8 @@ begin
         // Загрузка интервалами хороших записей
             for i := 0 to SrcTbl.GoodSpans.Count - 1 do begin
               Span := SrcTbl.GoodSpans[i];
-              ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) + ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
+              //ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) + ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
+              ss := Format('INSERT INTO "%s" SELECT TOP %d START AT %d * FROM "%s"  SRC', [SrcTbl.TableName, Span.InTOP, Span.InSTART, FileDst]);
               SrcTbl.ErrInfo.TotalIns := SrcTbl.ErrInfo.TotalIns + Conn.Execute(ss);
             end;
           end;
@@ -866,8 +903,8 @@ begin
           SrcTbl.ErrInfo.InsErr := UE_BAD_INS;
       end;
 
-    end;
   except
+    SrcTbl.ErrInfo.InsErr := UE_BAD_INS;
   end;
 
 end;
@@ -933,8 +970,8 @@ var
 begin
   Result := 0;
   try
-    Orig := P2Src + SrcTbl.Tablename;
-    FullName := Orig + '.adi';
+    Orig := P2Src + SrcTbl.NameNoExt;
+    FullName := Orig + ExtADI;
     if (FileExists(FullName)) then
         DeleteFile(FullName);
 
@@ -947,7 +984,7 @@ begin
         SrcTbl.BackUps[i] := '';
       end
       else
-        raise Exception.Create('Err rename');
+        raise Exception.Create('Ошибка восстановления оригинала ' + FullName);
     end;
     SrcTbl.BackUps.Clear;
   except

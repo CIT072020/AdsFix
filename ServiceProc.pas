@@ -47,6 +47,10 @@ const
     ADS_VARBINARY_FOX,
     ADS_SYSTEM_FIELD];
 
+  ExtADT = '.adt';
+  ExtADM = '.adm';
+  ExtADI = '.adi';
+
 const
   // Начальное значение User Login
   USER_EMPTY = '!-IM-USER-!';

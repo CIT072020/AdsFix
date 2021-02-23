@@ -172,7 +172,8 @@ begin
     if (ChangeAI(SrcTbl, ' INTEGER', Conn) = True) then begin
       if (SrcTbl.GoodSpans.Count <= 0) then begin
         // Загрузка оптом
-        ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT * FROM "' + FileDst + '" SRC';
+        //ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT * FROM "' + FileDst + '" SRC';
+        ss := Format('INSERT INTO "%s" SELECT * FROM "%s" SRC', [SrcTbl.TableName, FileDst]);
         if (Length(SrcTbl.DmgdRIDs) > 0) then
           ss := ss + ' WHERE SRC.ROWID NOT IN (' + SrcTbl.DmgdRIDs + ')';
         Conn.Execute(ss);
@@ -181,7 +182,8 @@ begin
         // Загрузка интервалами хороших записей
         for i := 0 to SrcTbl.GoodSpans.Count - 1 do begin
           Span := SrcTbl.GoodSpans[i];
-          ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) + ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
+          //ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) + ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
+          ss := Format('INSERT INTO "%s" SELECT TOP %d START AT %d * FROM "%s"  SRC', [SrcTbl.TableName, Span.InTOP, Span.InSTART, FileDst]);
           Conn.Execute(ss);
         end;
       end;

@@ -82,7 +82,11 @@ type
     procedure IndexesInfo(SrcTbl: TTableInf; QWork : TAdsQuery); virtual;
   public
     IsFree    : Boolean;
+    // Имя таблицы в словаре или в папке (Free table)
     TableName : string;
+    // Имя таблицы без расширения
+    NameNoExt : string;
+
     // Путь к словарю
     Path2Src  : string;
     // Объект TAdsTable
@@ -172,13 +176,21 @@ end;
 
 constructor TTableInf.Create(TName : string; TID : Integer; Conn: TAdsConnection);
 var
+  PosPoint: Integer;
   cName : string;
   T : TAdsTable;
 begin
   inherited Create;
 
-  IsFree := False;
   Self.TableName := TName;
+
+  NameNoExt := TableName;
+  PosPoint := LastDelimiter('.', TableName);
+  if (PosPoint > 0) then
+    NameNoExt := Copy(TableName, 1, PosPoint - 1);
+
+  IsFree := not (Conn.IsDictionaryConn);
+
   Self.Path2Src  := IncludeTrailingPathDelimiter(Conn.GetConnectionPath);
 
   cName := CMPNT_NAME + IntToStr(TID);
@@ -193,8 +205,6 @@ begin
 
   Self.AdsT.TableName := TName;
 
-  //Self.FSysPfx := AnsiPfx;
-
   FieldsInf  := TStringList.Create;
   FieldsAI   := TStringList.Create;
   IndexInf   := TList.Create;
@@ -203,7 +213,6 @@ begin
   NeedBackUp := True;
 
   ErrInfo   := TErrInfo.Create;
-  //ErrInfo.Rows4Del := TStringList.Create;
 
   BadRecs   := TList.Create;
   GoodSpans := TList.Create;
@@ -644,13 +653,22 @@ var
   QWork : TAdsQuery;
 begin
   Result := 0;
-  if (AdsTI.AdsT.Active) then
-    AdsTI.AdsT.Close;
 
   try
     Conn := AdsTI.AdsT.AdsConnection;
     QWork := TAdsQuery.Create(AdsTI.AdsT.Owner);
     QWork.AdsConnection := Conn;
+    try
+      AdsTI.AdsT.Open;
+    except
+      on E: EADSDatabaseError do begin
+        if (E.ACEErrorCode = 5159) AND (E.SQLErrorCode = 0) then begin
+          if AdsDDFreeTable(PAnsiChar(AdsTI.Path2Src + AdsTI.TableName), nil) = AE_FREETABLEFAILED then
+            // Словарная таблица обязательно освобождается
+            raise EADSDatabaseError.Create(AdsTI.AdsT, UE_BAD_PREP, 'Ошибка освобождения таблицы');
+        end;
+      end;
+    end;
 
     FieldsInfo(QWork);
     IndexesInfo(AdsTI, QWork);
