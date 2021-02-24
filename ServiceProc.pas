@@ -6,7 +6,9 @@ uses
   Windows, SysUtils, Classes, StrUtils, Forms, DB,
   ShlObj,
   adsdata,
-  ace;
+  ace,
+  SasaINiFile;
+
   
   // типы полей ADS
 type
@@ -52,6 +54,12 @@ const
   ExtADI = '.adi';
 
 const
+  // Секции INI
+  INI_PATHS  = 'PATH';
+  INI_CHECK  = 'CHECK';
+  INI_SAFETY = 'SAFETY';
+  INI_FIX    = 'FIXPARS';
+
   // Начальное значение User Login
   USER_EMPTY = '!-IM-USER-!';
   USER_DFLT  = 'AdsSys';
@@ -69,8 +77,8 @@ const
   INS_GOOD    : Integer = 64;
   INS_ERRORS  : Integer = 128;
 
-  // Пользователь должен установить удаляемые дубликаты
-  FIX_UWAIT   : Integer = 1 SHL 20;
+  // Пользователь отмечает удаляемые дубликаты
+  FIX_UWAIT   : Integer = (1 SHL 20);
 
 
   // Причины удаления строк
@@ -145,24 +153,34 @@ type
     UPass: String;
     // всего таблиц
     //TotTbls  : Integer;
+
     // Режим тестирования
     TMode: TestMode;
+
     // Способ удаления дубликатов
     DelDupMode: TDelDupMode;
+
     // Флаг тестирования при получении списка таблиц
     AutoTest: Boolean;
+
     // автопоиск наиболее подходящих строк для удаления из дубликатов
     AutoFix: Boolean;
     //FixDupsMode : Integer;
     SysAdsPfx: string;
+
+    IniFile : TSasaIniFile;
     // Form to show result
     ShowForm: TForm;
     function IsDictionary: Boolean;
+
+    constructor Create(Ini : TSasaIniFile);
+    destructor Destroy; override;
   end;
 
 
 function FType2ADS(FT : TFieldType) : Integer ;
 function SQLType2ADS(SQLType : string) : Integer ;
+function CopyOneFile(const Src, Dst: string): Integer;
 function SList2StrCommas(Tokens: TStringList; sKvL : string = ''''; sKvR : string = '''') : string;
 function Split(const delim, str: string): TStringList;
 function BrowseDir(hOwner: HWND; out SResultDir: string; const SDefaultDir:
@@ -174,7 +192,43 @@ var
 implementation
 
 uses
+  FileUtil,
   DBFunc;
+
+
+
+constructor TAppPars.Create(Ini : TSasaIniFile);
+var
+  i : Integer;
+begin
+  inherited Create;
+  IniFile := Ini;
+
+  // Default values
+  ULogin := USER_EMPTY;
+  // по умолчанию - простой режим тестирования
+  TMode := Simple;
+  // по умолчанию - удаление всех
+  DelDupMode := DDup_ALL;
+
+  try
+    Src      := Ini.ReadString(INI_PATHS, 'SRCPath', '');
+    Path2Tmp := Ini.ReadString(INI_PATHS, 'TMPPath', 'C:\Temp\');
+    AutoTest := Ini.ReadBool(INI_CHECK, 'AutoTest', True);
+    //i := IniFile.ReadInteger(INI_CHECK, 'TestMode', Integer(Simple));
+    TMode := TestMode(IniFile.ReadInteger(INI_CHECK, 'TestMode', Integer(Simple)));
+    //TMode := TestMode(i);
+    //i := Ini.ReadInteger(INI_FIX, 'DelDupMode', Integer(DDup_ALL));
+    DelDupMode := TDelDupMode(Ini.ReadInteger(INI_FIX, 'DelDupMode', Integer(DDup_ALL)));
+    //DelDupMode := TDelDupMode(i);
+  finally
+  end;
+end;
+
+destructor TAppPars.Destroy;
+begin
+  inherited Destroy;
+end;
 
 function TAppPars.IsDictionary : Boolean;
 begin
@@ -210,6 +264,16 @@ begin
     end;
 end;
 
+// Скопировать группу файлов по шаблону имени
+function CopyOneFile(const Src, Dst: string): Integer;
+begin
+  Result := 0;
+  try
+    CopyFileEx(Src, Dst, True, True, nil);
+  except
+    Result := 1;
+  end;
+end;
 
 // Список строк через запятую
 function SList2StrCommas(Tokens: TStringList; sKvL : string = ''''; sKvR : string = '''') : string;

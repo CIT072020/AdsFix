@@ -629,17 +629,6 @@ begin
 end;
 
 
-// Скопировать группу файлов по шаблону имени
-function CopyOneFile(const Src, Dst: string): Integer;
-begin
-  Result := 0;
-  try
-    CopyFileEx(Src, Dst, True, True, nil);
-  except
-    Result := 1;
-  end;
-end;
-
 // Копия оригинала и освобождение таблицы
 function PrepTable(P2Src, P2TMP: string; SrcTbl: TTableInf): Integer;
 var
@@ -691,6 +680,7 @@ begin
     i := 0;
     while not Eof do begin
       i := i + 1;
+      //SrcList.
       if (dtmdlADS.FSrcMark.AsBoolean = True) then begin
         SrcTbl := TTableInf(Ptr(dtmdlADS.FSrcFixInf.AsInteger));
         if (Assigned(SrcTbl)) then begin

@@ -6,7 +6,9 @@ uses
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
   Dialogs, StdCtrls, CheckLst, Buttons, Mask, DBCtrlsEh, ExtCtrls, Grids,
   DBGridEh, Menus, DB,ComCtrls, FileCtrl, IniFiles, ShellAPI, TypInfo,
-  kbmMemTable, DBCtrls, FuncPr;
+  kbmMemTable, DBCtrls,
+  SasaIniFile,
+  FuncPr;
 
 type
   TFormMain = class(TForm)
@@ -45,6 +47,9 @@ type
     lblTotalIns: TLabel;
     lblResIns: TLabel;
     btnTestQ: TButton;
+    chkUseWCopy: TCheckBox;
+    chkRewriteCopy: TCheckBox;
+    chkBackUp: TCheckBox;
     procedure ChangePath2TmpClick(Sender: TObject; var Handled: Boolean);
     procedure btnTblListClick(Sender: TObject);
     procedure btnRestOrigClick(Sender: TObject);
@@ -90,45 +95,24 @@ uses
 
 procedure TFormMain.FormCreate(Sender: TObject);
 var
-  iDD,
-  i : Integer;
-  Ini: TIniFile;
+  Ini: TSasaIniFile;
 begin
   cbbPath2Src.Items.Clear;
   cbbPath2Src.Items.Add(CONNECTIONTYPE_DDBROWSE);
   cbbPath2Src.Items.Add(CONNECTIONTYPE_DIRBROWSE);
 
-  AppPars := TAppPars.Create;
-  // Default values
-  AppPars.Path2Tmp := 'C:\Temp\';
-  AppPars.ULogin := USER_EMPTY;
-  // по умолчанию - простой режим тестирования
-  AppPars.TMode := Simple;
-  // по умолчанию - удаление всех
-  AppPars.DelDupMode := DDup_ALL;
+  //Ini := TIniFile.Create(ChangeFileExt(Application.ExeName, '.INI'));
+  Ini := TSasaIniFile.Create(ChangeFileExt(Application.ExeName, '.INI'));
 
-  Ini := TIniFile.Create(ChangeFileExt(Application.ExeName, '.INI'));
-  try
-    AppPars.Src := Ini.ReadString('PARAM', 'SRCPath', '');
-    cbbPath2Src.Text := AppPars.Src;
-    AppPars.Path2Tmp := Ini.ReadString('PARAM', 'TMPPath', '');
-    AppPars.AutoTest := Ini.ReadBool('PARAM', 'AutoTest', True);
-    i := Ini.ReadInteger('PARAM', 'TestMode', 0);
-    if (i > 0) then
-      AppPars.TMode := TestMode(i);
-    iDD := Ini.ReadInteger('PARAM', 'DelDupMode', 0);
-    if (iDD > 0) then
-      AppPars.DelDupMode := TDelDupMode(iDD)
-  finally
-    Ini.Free;
-  end;
+  AppPars := TAppPars.Create(Ini);
+  cbbPath2Src.Text := AppPars.Src;
   if Length(cbbPath2Src.Text) > 0 then
     btnTblList.Enabled := True;
 
   edtPath2Tmp.Text := AppPars.Path2Tmp;
 
-  rgTestMode.ItemIndex   := i;
-  rgDelDupMode.ItemIndex := iDD;
+  rgTestMode.ItemIndex   := Integer(AppPars.TMode);
+  rgDelDupMode.ItemIndex := Integer(AppPars.DelDupMode);
   chkAutoTest.Checked    := AppPars.AutoTest;
 
   AppPars.IsDictionary;
@@ -138,18 +122,21 @@ end;
 
 procedure TFormMain.FormDestroy(Sender: TObject);
 var
-  Ini: TIniFile;
+  Ini: TSasaIniFile;
 begin
   ProceedBackUps(0);
-  Ini := TIniFile.Create(ChangeFileExt(Application.ExeName, '.INI'));
+  //Ini := TIniFile.Create(ChangeFileExt(Application.ExeName, '.INI'));
+  Ini := AppPars.IniFile;
   try
     if Length(cbbPath2Src.Text) > 0 then
-      Ini.WriteString('PARAM', 'SRCPath', cbbPath2Src.Text);
+      Ini.WriteString(INI_PATHS, 'SRCPath', cbbPath2Src.Text);
     if Length(edtPath2Tmp.Text) > 0 then
-      Ini.WriteSTring('PARAM', 'TMPPath', edtPath2Tmp.Text);
-    Ini.WriteInteger('PARAM', 'TestMode', Ord(AppPars.TMode));
-    Ini.WriteInteger('PARAM', 'DelDupMode', Ord(AppPars.DelDupMode));
-    Ini.WriteBool('PARAM', 'AutoTest', AppPars.AutoTest);
+      Ini.WriteSTring(INI_PATHS, 'TMPPath', edtPath2Tmp.Text);
+
+    Ini.WriteBool(INI_CHECK, 'AutoTest', AppPars.AutoTest);
+    Ini.WriteInteger(INI_CHECK, 'TestMode', Ord(AppPars.TMode));
+    Ini.WriteInteger(INI_FIX, 'DelDupMode', Ord(AppPars.DelDupMode));
+    Ini.UpdateFile;
   finally
     Ini.Free;
   end;

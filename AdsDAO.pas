@@ -3,8 +3,10 @@ unit AdsDAO;
 interface
 
 uses
-  SysUtils, Classes, adsset, adscnnct, DB, adsdata, adsfunc, adstable, ace,
-  kbmMemTable, ServiceProc;
+  SysUtils, Classes, adsset, adscnnct, DB,
+  adsdata, adsfunc, adstable, ace,
+  kbmMemTable,
+  ServiceProc;
 
 type
   TdtmdlADS = class(TDataModule)

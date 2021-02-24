@@ -11,7 +11,7 @@ uses
   adsdata,
   //adsfunc,
   //adstable,
-  //ace,
+  ace,
   kbmMemTable,
   //EncdDecd,
   ServiceProc, AdsDAO, TableUtils;
@@ -28,6 +28,32 @@ type
   end;
 
 type
+
+  TSafeFix = class
+  // Класс поддержки создания/восстановления BackUp/рабочих копий для
+  // исправления ошибок в таблицах ADS
+  private
+    FUseCopy4Work : Boolean;
+    FReWriteWork  : Boolean;
+    FUseBackUp    : Boolean;
+  protected
+  public
+    // Исправление ошибок на копии таблицы
+    property UseCopy4Work : Boolean read FUseCopy4Work write FUseCopy4Work;
+    // Пересоздать рабочую копию, если имеется
+    property ReWriteWork : Boolean read FReWriteWork write FReWriteWork;
+    // Копия оригинальной таблицы перед внесением изменений
+    property UseBackUp : Boolean read FUseBackUp write FUseBackUp;
+
+
+    function WorkCopy(P2Src, P2TMP : string; Pars : TAppPars; SrcTbl: TTableInf): Integer;
+
+    constructor Create(FixBasePars: TAppPars);
+    destructor Destroy; override;
+  published
+  end;
+
+
   TFixBase = class(TInterfacedObject)
   // Класс исправления ошибок в таблицах ADS
   private
@@ -39,6 +65,7 @@ type
     property FixPars : TAppPars read FPars write FPars;
     // Список таблиц (словарь или папка)
     property FixList : TAdsList read FTblList write FTblList;
+
     // Заполнить и вернуть список ADS-таблиц
     function CreateFixList : TAdsList;
 
@@ -55,6 +82,85 @@ implementation
 uses
   FileUtil;
 
+constructor TSafeFix.Create(FixBasePars : TAppPars);
+begin
+  inherited Create;
+  //FixPars := FixBasePars;
+end;
+
+destructor TSafeFix.Destroy;
+begin
+  inherited Destroy;
+end;
+
+//-------------------------------------------------------------
+
+// Копия оригинала и освобождение таблицы
+function TSafeFix.WorkCopy(P2Src, P2TMP : string; Pars : TAppPars; SrcTbl: TTableInf): Integer;
+var
+
+  s, FileSrc, FileSrcNoExt, FileDst: string;
+begin
+  Result := UE_BAD_PREP;
+
+  if (SrcTbl.IsFree = False)
+    OR (UseCopy4Work = True) then begin
+    // Исправления выполняются в копии таблицы
+
+    // Группа файлов в источнике
+    FileSrc := P2Src + SrcTbl.NameNoExt;
+
+
+  end
+  else begin
+
+
+
+
+
+  end;
+
+
+  try
+    SrcTbl.FileTmp := P2TMP + SrcTbl.NameNoExt + ExtADT;
+
+    s := FileSrc + ExtADT;
+    if (CopyOneFile(s, P2TMP) <> 0) then
+      raise Exception.Create('Ошибка копирования ' + s);
+
+    s := FileSrc + ExtADM;
+    if FileExists(s) then begin
+      if (CopyOneFile(s, P2TMP) <> 0) then
+        raise Exception.Create('Ошибка копирования ' + s);
+    end;
+
+      if AdsDDFreeTable(PAnsiChar(SrcTbl.FileTmp), nil) = AE_FREETABLEFAILED then
+        if (SrcTbl.IsFree = False) then
+        // Словарная таблица обязательно освобождается
+          raise EADSDatabaseError.Create(SrcTbl.AdsT, UE_BAD_PREP, 'Ошибка освобождения таблицы');
+
+    SrcTbl.ErrInfo.PrepErr := 0;
+    Result := 0;
+  except
+    SrcTbl.ErrInfo.State := FIX_ERRORS;
+    SrcTbl.ErrInfo.PrepErr := UE_BAD_PREP;
+  end;
+end;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 constructor TFixBase.Create(FixBasePars : TAppPars);
 begin
   inherited Create;
@@ -67,6 +173,11 @@ begin
   inherited Destroy;
 
 end;
+
+//-------------------------------------------------------------
+
+
+
 
 function TFixBase.CreateFixList : TAdsList;
 begin
@@ -204,4 +315,3 @@ end;
 
 
 end.
- 
