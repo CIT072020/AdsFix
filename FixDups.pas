@@ -6,7 +6,7 @@ uses
   SysUtils, Classes, adsset, adscnnct, DB, adsdata, adsfunc, adstable, ace,
   kbmMemTable,
   //EncdDecd,
-  FixTypes,
+  //FixTypes,
   ServiceProc, AdsDAO, TableUtils;
 
 const
@@ -93,13 +93,14 @@ type
   end;
 
 
-procedure FixAllMarked;
+//procedure FixAllMarked;
+
 // Исправить оригинал для отмеченных
-procedure ChangeOriginalAllMarked;
+//procedure ChangeOriginalAllMarked;
 procedure ProceedBackUps(Mode : Integer);
 
 // Easy Mode - one button
-procedure FullFixAllMarked(FixAll : Boolean = True);
+//procedure FullFixAllMarked(FixAll : Boolean = True);
 
 var
   UInd : TIndexInf;
@@ -630,6 +631,7 @@ end;
 
 
 // Копия оригинала и освобождение таблицы
+{
 function PrepTable(P2Src, P2TMP: string; SrcTbl: TTableInf): Integer;
 var
   s, FileSrc, FileSrcNoExt, FileDst: string;
@@ -664,303 +666,26 @@ begin
     SrcTbl.ErrInfo.PrepErr := UE_BAD_PREP;
   end;
 end;
-
-
-// Исправить все отмеченные
-procedure FixAllMarked;
-var
-  ErrCode, i: Integer;
-  SetBad : Boolean;
-  SrcTbl: TTableInf;
-  FixList : TAdsList;
-begin
-  SetBad := False;
-  with FixBase.FixList.SrcList do begin
-    First;
-    i := 0;
-    while not Eof do begin
-      i := i + 1;
-      //SrcList.
-      if (dtmdlADS.FSrcMark.AsBoolean = True) then begin
-        SrcTbl := TTableInf(Ptr(dtmdlADS.FSrcFixInf.AsInteger));
-        if (Assigned(SrcTbl)) then begin
-          // Тестирование выполнялось, объект создан
-          Edit;
-
-          ErrCode := PrepTable(FixBase.FixList.Path2Src, AppPars.Path2Tmp, SrcTbl);
-          if (ErrCode = 0) then begin
-            ErrCode := TblErrorController(SrcTbl);
-            dtmdlADS.FSrcState.AsInteger := SrcTbl.ErrInfo.State;
-            dtmdlADS.FSrcFixCode.AsInteger := SrcTbl.ErrInfo.FixErr;
-          end
-          else begin
-            dtmdlADS.FSrcState.AsInteger   := FIX_ERRORS;
-            dtmdlADS.FSrcFixCode.AsInteger := ErrCode;
-          end;
-
-          Post;
-          if (AppPars.DelDupMode = DDup_USel) then begin
-            if (SrcTbl.ErrInfo.State = FIX_GOOD) and (SetBad = False) then begin
-              SetBad := True;
-              //dtmdlADS.dsPlan.DataSet := SrcTbl.ErrInfo.Plan2Del;
-            end;
-
-
-
-          end;
-        end;
-      end;
-      Next;
-    end;
-    First;
-  end;
-end;
-
-
-
-
-// AutoInc => Integer and reverse
-function ChangeAI(SrcTbl: TTableInf; AIType : string; Conn : TAdsConnection; DelExt : string = ''): Boolean;
-var
-  i: Integer;
-  s: string;
-begin
-  Result := True;
-  try
-    if (SrcTbl.FieldsAI.Count > 0) then begin
-      s := 'ALTER TABLE ' + SrcTbl.TableName;
-      for i := 0 to (SrcTbl.FieldsAI.Count - 1) do begin
-        s := s + ' ALTER COLUMN ' + SrcTbl.FieldsAI[i] + ' ' + SrcTbl.FieldsAI[i] + AIType;
-      end;
-      Conn.Execute(s);
-      if (Length(DelExt) > 0) then
-        DeleteFiles(IncludeTrailingPathDelimiter(Conn.GetConnectionPath) + SrcTbl.TableName + DelExt);
-    end;
-  except
-    Result := False;
-  end;
-end;
-
-// Integer => AutoInc
-{
-function ChangeInt2AI(SrcTbl: TTableInf): Boolean;
-var
-  ec : Boolean;
-  i  : Integer;
-  s  : string;
-begin
-  Result := True;
-  try
-    if (SrcTbl.FieldsAI.Count > 0) then begin
-      s := 'ALTER TABLE ' + SrcTbl.TableName;
-      for i := 0 to (SrcTbl.FieldsAI.Count - 1) do begin
-        s := s + ' ALTER COLUMN ' + SrcTbl.FieldsAI[i] + ' ' + SrcTbl.FieldsAI[i] + ' AUTOINC';
-      end;
-      SrcTbl.AdsT.AdsConnection.Execute(s);
-    end;
-  except
-    Result := False;
-  end;
-
-end;
 }
 
 
-// Вставка в обнуляемый оригинал исправленных записей
-function ChangeOriginal(P2Src, P2Tmp: string; SrcTbl: TTableInf): Boolean;
-var
-  ErrAdm, ecb: Boolean;
-  i: Integer;
-  FileSrc, FileDst, TmpName, ss, sd: string;
-  Span: TSpan;
-  Conn: TAdsConnection;
-
-
-function BackUpOne(Ext: string) : Boolean;
-begin
-  ss := FileSrc + Ext;
-  sd := TmpName + Ext;
-  if (SrcTbl.IsFree) then
-    Result := (CopyOneFile(ss, sd) = 0)
-  else
-    Result := RenameFile(ss, sd);
-  if (Result = True) then
-    SrcTbl.BackUps.Add(sd)
-  else
-    raise Exception.Create('Ошибка дубликата - ' + ss);
-end;
-
-
-begin
-  Result := False;
-  SrcTbl.ErrInfo.State := INS_ERRORS;
-  SrcTbl.ErrInfo.InsErr := UE_BAD_INS;
-
-  try
-    SrcTbl.AdsT.Active := False;
-    Conn := SrcTbl.AdsT.AdsConnection;
-    Conn.Disconnect;
-
-    ecb := True;
-    ErrAdm := True;
-
-    FileSrc := P2Src + SrcTbl.NameNoExt;
-    FileDst := P2Tmp + SrcTbl.NameNoExt + ExtADT;
-
-    if (SrcTbl.NeedBackUp = True) then begin
-    // Перед вставкой сделать копию
-      TmpName := P2Src + ORGPFX + SrcTbl.NameNoExt;
-      ecb := DeleteFiles(TmpName + '.*');
-
-      if FileExists(FileSrc + ExtADI) then
-        if (SrcTbl.IsFree = True) then
-          ecb := BackUpOne(ExtADI)
-        else
-          ecb := DeleteFiles(FileSrc + ExtADI);
-{
-      ss := FileSrc + ExtADT;
-      sd := TmpName + ExtADT;
-      if (SrcTbl.IsFree) then
-        ecb := (CopyOneFile(ss, sd) = 0)
-      else
-        ecb := RenameFile(ss, sd);
-      if (ecb = True) then
-        SrcTbl.BackUps.Add(sd);
-}
-       ecb := ecb and BackUpOne(ExtADT);
-      if FileExists(FileSrc + ExtADM) then begin
-{
-        ss := FileSrc + ExtADM;
-        sd := TmpName + ExtADM;
-        if (SrcTbl.IsFree) then
-          ErrAdm := (CopyOneFile(ss, sd) = 0)
-        else
-          ErrAdm := RenameFile(ss, sd);
-        if (ErrAdm = True) then
-          SrcTbl.BackUps.Add(sd);
-}
-        ErrAdm := BackUpOne(ExtADM);
-      end;
-    end;
-
-    Conn.IsConnected := True;
-    // Очистить таблицу
-    if (Conn.IsDictionaryConn = False) then begin
-      Conn.Execute(Format('DELETE FROM "%s"', [SrcTbl.TableName]));
-    end
-    else begin
-    // Удалить таблицу + Memo + index
-      ecb := DeleteFiles(FileSrc + '.ad?');
-      if (ecb = True) and (ErrAdm = True) then begin
-  //--- Auto-create empty table
-        SrcTbl.AdsT.Active := True;
-        SrcTbl.AdsT.Active := False;
-  //---
-      end;
-    end;
-      try
-        // врЕменная замена AUTOINC на INTEGER
-        if (ChangeAI(SrcTbl, ' INTEGER', Conn) = True) then begin
-          SrcTbl.ErrInfo.TotalIns := 0;
-          if (SrcTbl.GoodSpans.Count <= 0) then begin
-        // Загрузка оптом
-            //ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT * FROM "' + FileDst + '" SRC';
-            ss := Format('INSERT INTO "%s" SELECT * FROM "%s" SRC', [SrcTbl.TableName, FileDst]);
-            if (Length(SrcTbl.DmgdRIDs) > 0) then
-              ss := ss + ' WHERE SRC.ROWID NOT IN (' + SrcTbl.DmgdRIDs + ')';
-            SrcTbl.ErrInfo.TotalIns := Conn.Execute(ss);
-          end
-          else begin
-        // Загрузка интервалами хороших записей
-            for i := 0 to SrcTbl.GoodSpans.Count - 1 do begin
-              Span := SrcTbl.GoodSpans[i];
-              //ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) + ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
-              ss := Format('INSERT INTO "%s" SELECT TOP %d START AT %d * FROM "%s"  SRC', [SrcTbl.TableName, Span.InTOP, Span.InSTART, FileDst]);
-              SrcTbl.ErrInfo.TotalIns := SrcTbl.ErrInfo.TotalIns + Conn.Execute(ss);
-            end;
-          end;
-        // восстановление AUTOINC на INTEGER
-          ChangeAI(SrcTbl, ' AUTOINC', Conn, '.ad?.bak');
-        end;
-        SrcTbl.ErrInfo.State := INS_GOOD;
-        SrcTbl.ErrInfo.InsErr := 0;
-        Result := True;
-      except
-        on E: EADSDatabaseError do begin
-          SrcTbl.ErrInfo.InsErr := E.ACEErrorCode;
-        end
-        else
-          SrcTbl.ErrInfo.InsErr := UE_BAD_INS;
-      end;
-
-  except
-    SrcTbl.ErrInfo.InsErr := UE_BAD_INS;
-  end;
-
-end;
 
 
 
 
-// Исправить оригинал для отмеченных
-procedure ChangeOriginalAllMarked;
-var
-  GoodChange: Boolean;
-  i: Integer;
-  SrcTbl: TTableInf;
-  DAds  : TTblDict;
-begin
-  with dtmdlADS.mtSrc do begin
-    First;
-    i := 0;
-    while not Eof do begin
-      i := i + 1;
-      if (dtmdlADS.FSrcMark.AsBoolean = True) then begin
-        // для отмеченных
-
-        SrcTbl := TTableInf(Ptr(dtmdlADS.FSrcFixInf.AsInteger));
-        if (Assigned(SrcTbl)) then begin
-          // Тестирование выполнялось, объект создан, есть пофиксеные записи
-          if (SrcTbl.ErrInfo.State = FIX_GOOD) then begin
-
-            dtmdlADS.mtSrc.Edit;
-            GoodChange := ChangeOriginal(FixBase.FixList.Path2Src, AppPars.Path2Tmp, SrcTbl);
-            //(TFormMain(AppPars.ShowForm)).lblResIns.Caption := IntToStr(SrcTbl.ErrInfo.TotalIns);
-            //GoodChange := DAds.ChangeOriginal;
-            if (GoodChange = True) then begin
-          // успешно вствлено
-              dtmdlADS.FSrcMark.AsBoolean := False;
-            end
-            else begin
-          // ошибки вставки
-            end;
-            dtmdlADS.FSrcState.AsInteger   := SrcTbl.ErrInfo.State;
-            dtmdlADS.FSrcFixCode.AsInteger := SrcTbl.ErrInfo.InsErr;
-
-            dtmdlADS.mtSrc.Post;
-          end;
-        end;
-      end;
-      Next;
-    end;
-    First;
-    dtmdlADS.cnnSrcAds.Disconnect;
-  end;
-
-end;
 
 
 
 
 // Восстановление сохраненных оригиналов с ошибками (BAckups) для одной таблицы
-function RestBUps4OneTable(SrcTbl: TTableInf; P2Src: string): integer;
+function RestBUps4OneTable(SrcTbl: TTableInf): integer;
 var
   FullName, Orig: string;
   i: Integer;
 begin
   Result := 0;
   try
-    Orig := P2Src + SrcTbl.NameNoExt;
+    Orig := SrcTbl.Pars.Path2Src + SrcTbl.NameNoExt;
     FullName := Orig + ExtADI;
     if (FileExists(FullName)) then
         DeleteFile(FullName);
@@ -1017,7 +742,7 @@ begin
           if (Mode = 0) then
             TotFiles := TotFiles + DelBUps4OneTable(TTableInf(PTblInf))
           else
-            TotFiles := TotFiles + RestBUps4OneTable(TTableInf(PTblInf), FixBase.FixList.Path2Src);
+            TotFiles := TotFiles + RestBUps4OneTable(TTableInf(PTblInf));
         end;
         Next;
       end;
@@ -1027,6 +752,7 @@ end;
 
 
 // Полный цикл для одной таблицы
+{
 function FullFixOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer; FixPars: TAppPars; Q: TAdsQuery): TTableInf;
 var
   RowsFixed,
@@ -1035,7 +761,7 @@ var
 begin
 
   if (Ptr2TableInf = 0) then begin
-    SrcTbl := TTableInf.Create(TName, TID, Q.AdsConnection);
+    SrcTbl := TTableInf.Create(TName, TID, Q.AdsConnection, FixPars);
     ec := SrcTbl.Test1Table(SrcTbl, FixPars.TMode, FixPars.SysAdsPfx);
   end
   else begin
@@ -1046,7 +772,7 @@ begin
 
   if (ec > 0) then begin
     // Ошибки тестирования были
-    ec := PrepTable(FixBase.FixList.Path2Src, AppPars.Path2Tmp, SrcTbl);
+    ec := SrcTbl.SetWorkCopy(AppPars.Path2Tmp);
     if (ec = 0) then begin
       // Исправление копии
       RowsFixed := TblErrorController(SrcTbl);
@@ -1060,9 +786,11 @@ begin
     end;
   end;
 end;
+}
 
 
 // Full Proceed для всех/отмеченных
+{
 procedure FullFixAllMarked(FixAll : Boolean = True);
 var
   ec, i: Integer;
@@ -1107,6 +835,9 @@ begin
   SortByState(True);
 
 end;
+}
+
+
 
 //!!!===!!! Not used
 {

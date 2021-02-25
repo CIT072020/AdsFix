@@ -101,7 +101,6 @@ begin
   cbbPath2Src.Items.Add(CONNECTIONTYPE_DDBROWSE);
   cbbPath2Src.Items.Add(CONNECTIONTYPE_DIRBROWSE);
 
-  //Ini := TIniFile.Create(ChangeFileExt(Application.ExeName, '.INI'));
   Ini := TSasaIniFile.Create(ChangeFileExt(Application.ExeName, '.INI'));
 
   AppPars := TAppPars.Create(Ini);
@@ -115,7 +114,6 @@ begin
   rgDelDupMode.ItemIndex := Integer(AppPars.DelDupMode);
   chkAutoTest.Checked    := AppPars.AutoTest;
 
-  AppPars.IsDictionary;
   AppPars.ShowForm := Self;
   FixBase := TFixBase.Create(AppPars);
 end;
@@ -125,7 +123,6 @@ var
   Ini: TSasaIniFile;
 begin
   ProceedBackUps(0);
-  //Ini := TIniFile.Create(ChangeFileExt(Application.ExeName, '.INI'));
   Ini := AppPars.IniFile;
   try
     if Length(cbbPath2Src.Text) > 0 then
@@ -150,16 +147,14 @@ end;
 
 procedure TFormMain.cbbPath2SrcCloseUp(Sender: TObject; Accept: Boolean);
 var
-  DictPath : Boolean;
   PathNew: string;
 begin
-  DictPath  := False;
   PathNew   := '';
   if (cbbPath2Src.Text = CONNECTIONTYPE_DIRBROWSE) then begin
     // свободные таблицы
-    if SelectDirectory(AppPars.Src, [sdAllowCreate, sdPerformCreate, sdPrompt], 0) then begin
-      PathNew := AppPars.Src;
-    end;
+    PathNew := AppPars.Src;
+    if (NOT SelectDirectory(PathNew, [sdAllowCreate, sdPerformCreate, sdPrompt], 0)) then
+      PathNew   := '';
   end
   else begin
     // словарные таблицы
@@ -168,7 +163,6 @@ begin
       OpenDialog.Filter := DATA_DICTIONARY_FILTER;
       if OpenDialog.Execute then begin
         PathNew  := OpenDialog.FileName;
-        DictPath := True;
         AppPars.ULogin := USER_EMPTY;
       end
     end
@@ -176,18 +170,10 @@ begin
 
   if (Length(PathNew) > 0) then begin
     AppPars.Src := PathNew;
-    AppPars.IsDictionary;
     cbbPath2Src.Text := PathNew;
-{
-    if (AppPars.IsDict = True) then
-      AppPars.Path2Src := ExtractFilePath(PathNew)
-    else
-      AppPars.Path2Src := IncludeTrailingPathDelimiter(PathNew);
-}      
   end
   else
     cbbPath2Src.Text := FSavedComboText;
-
 end;
 
 procedure TFormMain.cbbPath2SrcChange(Sender: TObject);
@@ -220,19 +206,19 @@ procedure TFormMain.btnTblListClick(Sender: TObject);
 var
   i : Integer;
 begin
-  if (FixBase.CreateFixList.List4Fix(AppPars) = 0) then begin
+  if (FixBase.FixPars.IsDict) then
+    FixBase.FixList := TDictList.Create(FixBase.FixPars)
+  else
+    FixBase.FixList := TFreeList.Create(FixBase.FixPars);
+  if (FixBase.FixList.FillList4Fix(AppPars) = 0) then begin
     if (chkAutoTest.Checked = True) then
       FixBase.FixList.TestSelected(True, AppPars.TMode);
-
   end
   else begin
     // No Ads tables OR ???
         ShowMessage('Неправильное имя пользователя или пароль');
   end;
-
 end;
-
-
 
 // Протестировать выбранные
 procedure TFormMain.btnTestClick(Sender: TObject);
@@ -245,7 +231,6 @@ begin
   end;
 end;
 
-
 // Исправить помеченные
 procedure TFormMain.btnProcMarkClick(Sender: TObject);
 var
@@ -257,7 +242,7 @@ begin
     if (Length(s) > 0) then begin
       AppPars.Path2Tmp := s;
       dtmdlADS.cnnTmp.IsConnected := False;
-      FixAllMarked;
+      FixBase.FixAllMarked;
       //if (dtmdlADS.conAdsBase.IsConnected = True) then
       dtmdlADS.cnnSrcAds.IsConnected := False;
     end;
@@ -271,7 +256,7 @@ procedure TFormMain.btnGetFixedClick(Sender: TObject);
 begin
   TButtonControl(Sender).Enabled := False;
   try
-    ChangeOriginalAllMarked;
+    FixBase.ChangeOriginalAllMarked;
   finally
     TButtonControl(Sender).Enabled := True;
   end;
@@ -319,7 +304,7 @@ procedure TFormMain.btnFullFixOneClick(Sender: TObject);
 begin
   TButtonControl(Sender).Enabled := False;
   try
-    FullFixAllMarked(False);
+    FixBase.FullFixAllMarked(False);
   finally
     TButtonControl(Sender).Enabled := True;
   end;
@@ -328,9 +313,9 @@ end;
 // Проверить и исправить все
 procedure FullFix;
 begin
-  if (FixBase.CreateFixList.List4Fix(AppPars) = 0) then begin
+  if (FixBase.FixList.FillList4Fix(AppPars) = 0) then begin
     FixBase.FixList.TestSelected(True, AppPars.TMode);
-    FullFixAllMarked(False);
+    FixBase.FullFixAllMarked(False);
   end
   else
   PutError('Таблицы не найдены!');
@@ -343,11 +328,20 @@ procedure TFormMain.btnFixAllClick(Sender: TObject);
 begin
   TButtonControl(Sender).Enabled := False;
   try
-    FullFix;
+    FixBase.FullFix;
   finally
     TButtonControl(Sender).Enabled := True;
   end;
 end;
+
+
+
+
+
+
+
+
+
 
 procedure TFormMain.btnTestQClick(Sender: TObject);
 var

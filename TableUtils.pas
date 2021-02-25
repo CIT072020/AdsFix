@@ -26,15 +26,6 @@ type
     IndFieldsAdr: array of integer;
   end;
 
-  // описание записи в наборе дубликатов
-{
-  TDupRow = class
-    RowID : string;
-    FillPcnt : Integer;
-    DelRow : Boolean;
-  end;
-}
-
 type
   // Info по ошибке
   TErrInfo = class
@@ -78,21 +69,22 @@ type
   TTableInf = class(TInterfacedObject)
   private
     //FSysPfx   : string;
+    FPars    : TAppPars;
     procedure FieldsInfo(Q : TAdsQuery); virtual;
     procedure IndexesInfo(SrcTbl: TTableInf; QWork : TAdsQuery); virtual;
   public
-    IsFree    : Boolean;
+    //IsFree    : Boolean;
     // Имя таблицы в словаре или в папке (Free table)
     TableName : string;
+    // Путь к словарю/папке (free)
+    //Path2Src  : string;
     // Имя таблицы без расширения
     NameNoExt : string;
+    // Имя файла копии для исправлений
+    FileTmp   : string;
 
-    // Путь к словарю
-    Path2Src  : string;
     // Объект TAdsTable
     AdsT      : TAdsTable;
-
-    FileTmp   : string;
 
     // количество записей (теоретически)
     RecCount  : Integer;
@@ -109,8 +101,11 @@ type
     FieldsAI  : TStringList;
 
     NeedBackUp : Boolean;
+
     // Список резервных копий
     BackUps   : TStringList;
+    // Инфо для BackUp/Work
+    //SafeFix   : TSafeFix;
 
     ErrInfo  : TErrInfo;
 
@@ -126,11 +121,15 @@ type
     TotalDel  : Integer;
     RowsFixed : Integer;
 
+    property Pars : TAppPars read FPars write FPars;
+
     //function Test1Table(AdsTI : TTableInf; Check: TestMode): Integer; virtual;
     function Test1Table(AdsTI : TTableInf; Check: TestMode; SysAnsi : string): Integer; virtual;
 
-    //constructor Create(TName : string; TID : Integer; Conn: TAdsConnection; AnsiPfx : string);
-    constructor Create(TName : string; TID : Integer; Conn: TAdsConnection);
+    // Установка рабочей копии и объекта состояния исправлений
+    function SetWorkCopy(P2TMP : string): Integer;
+
+    constructor Create(TName : string; TID : Integer; Conn: TAdsConnection; AppPars : TAppPars);
     destructor Destroy; override;
   end;
 
@@ -143,7 +142,7 @@ type
     procedure IndexesInfo(SrcTbl: TTableInf; Q : TAdsQuery);
   public
     function Test1Table(AdsTI : TFreeTable; Check: TestMode): Integer;
-    constructor Create(TName : string; TID : Integer; Conn: TAdsConnection); overload;
+    //constructor Create(TName : string; TID : Integer; Conn: TAdsConnection; AppPars : TAppPars); overload;
   end;
 
 
@@ -174,7 +173,7 @@ begin
     end;
 end;
 
-constructor TTableInf.Create(TName : string; TID : Integer; Conn: TAdsConnection);
+constructor TTableInf.Create(TName : string; TID : Integer; Conn: TAdsConnection; AppPars : TAppPars);
 var
   PosPoint: Integer;
   cName : string;
@@ -182,33 +181,35 @@ var
 begin
   inherited Create;
 
-  Self.TableName := TName;
+  Pars := AppPars;
+  TableName := TName;
 
   NameNoExt := TableName;
   PosPoint := LastDelimiter('.', TableName);
   if (PosPoint > 0) then
     NameNoExt := Copy(TableName, 1, PosPoint - 1);
 
-  IsFree := not (Conn.IsDictionaryConn);
+  //IsFree := not (Conn.IsDictionaryConn);
 
-  Self.Path2Src  := IncludeTrailingPathDelimiter(Conn.GetConnectionPath);
+  //Self.Path2Src  := IncludeTrailingPathDelimiter(Conn.GetConnectionPath);
 
   cName := CMPNT_NAME + IntToStr(TID);
   T := TableExists(Conn.Owner, cName);
   if ( not Assigned(T) ) then begin
-    Self.AdsT := TAdsTable.Create(Conn.Owner);
-    Self.AdsT.Name := cName;
-    Self.AdsT.AdsConnection := Conn;
+    AdsT := TAdsTable.Create(Conn.Owner);
+    AdsT.Name := cName;
+    AdsT.AdsConnection := Conn;
   end
   else
-    Self.AdsT := T;
+    AdsT := T;
 
-  Self.AdsT.TableName := TName;
+  AdsT.TableName := TName;
 
   FieldsInf  := TStringList.Create;
   FieldsAI   := TStringList.Create;
   IndexInf   := TList.Create;
   BackUps    := TStringList.Create;
+  //SafeFix    := Pars.SafeFix;
 
   NeedBackUp := True;
 
@@ -224,12 +225,13 @@ begin
   //if FField2 <> nil then FreeAndNil(FField2);
   inherited Destroy;
 end;
-
-constructor TFreeTable.Create(TName : string; TID : Integer; Conn: TAdsConnection);
+{
+constructor TFreeTable.Create(TName : string; TID : Integer; Conn: TAdsConnection; AppPars : TAppPars);
 begin
-  inherited Create(TName, TID, Conn);
+  inherited Create(TName, TID, Conn, AppPars);
   IsFree := True;
 end;
+}
 
 // сведения о полях одной таблицы (Select из dictionary)
 procedure TTableInf.FieldsInfo(Q : TAdsQuery);
@@ -399,8 +401,6 @@ begin
 end;
 
 
-
-
 // подбор простейших полей для ALTER
 function Field4Alter(AdsTI: TTableInf): integer;
 var
@@ -551,28 +551,7 @@ begin
 end;
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// тестирование одной таблицы на ошибки
+// тестирование одной таблицы на ошибки (Dictionary)
 function TTableInf.Test1Table(AdsTI : TTableInf; Check: TestMode; SysAnsi : string): Integer;
 var
   iFld, ec: Integer;
@@ -642,7 +621,7 @@ begin
 
 end;
 
-// тестирование одной таблицы на ошибки
+// тестирование одной таблицы на ошибки (Free Table)
 function TFreeTable.Test1Table(AdsTI : TFreeTable; Check: TestMode): Integer;
 var
   iFld, ec: Integer;
@@ -663,7 +642,7 @@ begin
     except
       on E: EADSDatabaseError do begin
         if (E.ACEErrorCode = 5159) AND (E.SQLErrorCode = 0) then begin
-          if AdsDDFreeTable(PAnsiChar(AdsTI.Path2Src + AdsTI.TableName), nil) = AE_FREETABLEFAILED then
+          if AdsDDFreeTable(PAnsiChar(AdsTI.Pars.Path2Src + AdsTI.TableName), nil) = AE_FREETABLEFAILED then
             // Словарная таблица обязательно освобождается
             raise EADSDatabaseError.Create(AdsTI.AdsT, UE_BAD_PREP, 'Ошибка освобождения таблицы');
         end;
@@ -724,6 +703,63 @@ begin
   end;
 
 end;
+
+
+//-------------------------------------------------------------
+
+// Копия оригинала и освобождение таблицы
+function TTableInf.SetWorkCopy(P2TMP : string): Integer;
+var
+
+  s, FileSrc, FileSrcNoExt, FileDst: string;
+begin
+  Result := UE_BAD_PREP;
+
+  if (Pars.IsDict = True)
+    OR (Pars.SafeFix.UseCopy4Work = True) then begin
+    // Исправления выполняются в копии таблицы
+
+    // Предварительные исправления вносятся сюда
+    FileTmp := P2TMP + NameNoExt + ExtADT;
+
+    // Группа файлов в источнике
+    FileSrc := Pars.Path2Src + NameNoExt;
+  try
+    s := FileSrc + ExtADT;
+    if (CopyOneFile(s, P2TMP) <> 0) then
+      raise Exception.Create('Ошибка копирования ' + s);
+
+    s := FileSrc + ExtADM;
+    if FileExists(s) then begin
+      if (CopyOneFile(s, P2TMP) <> 0) then
+        raise Exception.Create('Ошибка копирования ' + s);
+    end;
+
+      if AdsDDFreeTable(PAnsiChar(FileTmp), nil) = AE_FREETABLEFAILED then
+        if (Pars.IsDict = True) then
+        // Словарная таблица обязательно освобождается
+          raise EADSDatabaseError.Create(AdsT, UE_BAD_PREP, 'Ошибка освобождения таблицы');
+
+    ErrInfo.PrepErr := 0;
+    Result := 0;
+  except
+    ErrInfo.State := FIX_ERRORS;
+    ErrInfo.PrepErr := UE_BAD_PREP;
+  end;
+
+  end
+  else begin
+
+
+
+
+
+  end;
+
+
+end;
+
+
 
 
 end.

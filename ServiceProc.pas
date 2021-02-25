@@ -140,17 +140,42 @@ type
   TDelDupMode = (DDup_ALL, DDup_EX1, DDup_USel);
 
 type
+
+  TSafeFix = class
+  // Класс поддержки создания/восстановления BackUp/рабочих копий для
+  // исправления ошибок в таблицах ADS
+  private
+    FUseCopy4Work : Boolean;
+    FReWriteWork  : Boolean;
+    FUseBackUp    : Boolean;
+  protected
+  public
+    // Исправление ошибок на копии таблицы
+    property UseCopy4Work : Boolean read FUseCopy4Work write FUseCopy4Work;
+    // Пересоздать рабочую копию, если имеется
+    property ReWriteWork : Boolean read FReWriteWork write FReWriteWork;
+    // Копия оригинальной таблицы перед внесением изменений
+    property UseBackUp : Boolean read FUseBackUp write FUseBackUp;
+
+    constructor Create(Ini : TSasaIniFile);
+    destructor Destroy; override;
+  published
+  end;
+
   // Параметры для восстановления
   TAppPars = class
   private
+    FSrc : String;
+    procedure FWriteSrc(const Value : string);
   public
-    Src: String;
     IsDict: Boolean;
-    //Path2Src : String;
+    Path2Src : String;
     Path2Tmp: String;
+
     // Установленные Login/Password
     ULogin: String;
     UPass: String;
+
     // всего таблиц
     //TotTbls  : Integer;
 
@@ -160,17 +185,25 @@ type
     // Способ удаления дубликатов
     DelDupMode: TDelDupMode;
 
-    // Флаг тестирования при получении списка таблиц
+    // Флаг тестирования при построении списка таблиц
     AutoTest: Boolean;
 
     // автопоиск наиболее подходящих строк для удаления из дубликатов
     AutoFix: Boolean;
-    //FixDupsMode : Integer;
+
+    // FixDupsMode : Integer;
     SysAdsPfx: string;
 
     IniFile : TSasaIniFile;
     // Form to show result
     ShowForm: TForm;
+
+    // Инфо для BackUp/Work
+    SafeFix   : TSafeFix;
+
+    // Путь к списоку таблиц (словарь или папка)
+    property Src : string read FSrc write FWriteSrc;
+
     function IsDictionary: Boolean;
 
     constructor Create(Ini : TSasaIniFile);
@@ -196,6 +229,18 @@ uses
   DBFunc;
 
 
+constructor TSafeFix.Create(Ini : TSasaIniFile);
+begin
+  inherited Create;
+  UseCopy4Work := Ini.ReadBool(INI_SAFETY, 'COPY4FIX', True);
+  ReWriteWork  := Ini.ReadBool(INI_SAFETY, 'RWRCOPY', True);
+  UseBackUp    := Ini.ReadBool(INI_SAFETY, 'BACKUP', True);
+end;
+
+destructor TSafeFix.Destroy;
+begin
+  inherited Destroy;
+end;
 
 constructor TAppPars.Create(Ini : TSasaIniFile);
 var
@@ -221,6 +266,7 @@ begin
     //i := Ini.ReadInteger(INI_FIX, 'DelDupMode', Integer(DDup_ALL));
     DelDupMode := TDelDupMode(Ini.ReadInteger(INI_FIX, 'DelDupMode', Integer(DDup_ALL)));
     //DelDupMode := TDelDupMode(i);
+    SafeFix := TSafeFix.Create(Ini);
   finally
   end;
 end;
@@ -228,15 +274,28 @@ end;
 destructor TAppPars.Destroy;
 begin
   inherited Destroy;
+  FreeAndNil(SafeFix);
 end;
 
 function TAppPars.IsDictionary : Boolean;
 begin
   Result := False;
-  if (Pos('.ADD', UpperCase(Src)) > 0) then
+  if (Pos('.ADD', UpperCase(ExtractFileExt(Src))) > 0) then
     Result := True;
   IsDict := Result;
+  if (IsDict = True) then
+      Path2Src := ExtractFilePath(Src)
+    else
+      Path2Src := IncludeTrailingPathDelimiter(Src);
 end;
+
+procedure TAppPars.FWriteSrc(const Value : string);
+begin
+  FSrc := Value;
+  if (FSrc <> '') then
+    IsDictionary;
+end;
+
 
 // Перевод TFieldType в ADS-типы (ace.pas)
 function FType2ADS(FT : TFieldType) : Integer ;

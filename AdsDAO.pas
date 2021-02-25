@@ -61,17 +61,17 @@ type
   public
     property Pars : TAppPars read FPars write FPars;
     // путь к словарю/таблице
-    property Path2Src : string read FSrcPath write FSrcPath;
+    //property Path2Src : string read FSrcPath write FSrcPath;
     // MemTable со списком
     property SrcList : TkbmMemTable read FTblList write FTblList;
-    property Conn : TAdsConnection read FAdsConn write FAdsConn;
+    property SrcConn : TAdsConnection read FAdsConn write FAdsConn;
     property TablesCount : Integer read FTCount write FTCount;
 
-    function List4Fix(AppPars : TAppPars) : Integer; virtual; abstract;
+    function FillList4Fix(AppPars : TAppPars) : Integer; virtual; abstract;
     // Тестирование всех или только отмеченных
     procedure TestSelected(ModeAll : Boolean; TMode : TestMode);  virtual; abstract;
 
-    constructor Create(Cnct : TAdsConnection = nil);
+    constructor Create(APars : TAppPars; Cnct : TAdsConnection = nil);
     destructor Destroy; override;
   published
 
@@ -80,16 +80,16 @@ type
   // Список таблиц на базе словаря ADS
   TDictList = class(TAdsList)
   private
-    FDictPath : string;
+    //FDictPath : string;
 
     function DictAvail : Boolean;
     function TablesListFromDict(QA: TAdsQuery): Integer;
   protected
   public
-    property DictFullPath : string read FDictPath write FDictPath;
+    //property DictFullPath : string read FDictPath write FDictPath;
 
     // Создать список таблиц на базе словаря ADS
-    function List4Fix(AppPars : TAppPars) : Integer; override;
+    function FillList4Fix(AppPars : TAppPars) : Integer; override;
     // Тестирование всех или только отмеченных
     procedure TestSelected(ModeAll : Boolean; TMode : TestMode);override;
   published
@@ -103,7 +103,7 @@ type
   protected
   public
     // Создать список свбодных таблиц
-    function List4Fix(AppPars : TAppPars) : Integer; override;
+    function FillList4Fix(AppPars : TAppPars) : Integer; override;
     // Тестирование всех или только отмеченных
     procedure TestSelected(ModeAll : Boolean; TMode : TestMode); override;
   published
@@ -165,13 +165,14 @@ begin
 end;
 
 
-constructor TAdsList.Create(Cnct : TAdsConnection = nil);
+constructor TAdsList.Create(APars : TAppPars; Cnct : TAdsConnection = nil);
 begin
   inherited Create;
+  Pars := APars;
   if (Assigned(Cnct)) then
-    Conn := Cnct
+    SrcConn := Cnct
   else
-    Conn := dtmdlADS.cnnSrcAds;
+    SrcConn := dtmdlADS.cnnSrcAds;
   SrcList := dtmdlADS.mtSrc;
 end;
 
@@ -205,11 +206,11 @@ begin
   if (Pars.ULogin <> USER_EMPTY) then begin
     try
     //подключаемся к базе
-      Conn.IsConnected := False;
-      Conn.Username := Pars.ULogin;
-      Conn.Password := Pars.UPass;
-      Conn.ConnectPath := Pars.Src;
-      Conn.IsConnected := True;
+      SrcConn.IsConnected := False;
+      SrcConn.Username := Pars.ULogin;
+      SrcConn.Password := Pars.UPass;
+      SrcConn.ConnectPath := Pars.Src;
+      SrcConn.IsConnected := True;
       Result := True;
     except
       Pars.ULogin := USER_EMPTY;
@@ -259,10 +260,10 @@ begin
 end;
 
 // Построение словарного списка таблиц для восстановления
-function TDictList.List4Fix(AppPars : TAppPars) : Integer;
+function TDictList.FillList4Fix(AppPars : TAppPars) : Integer;
 begin
   Pars := AppPars;
-  DictFullPath := Pars.Src;
+  //DictFullPath := Pars.Src;
   if (DictAvail = True) then begin
     Pars.SysAdsPfx := SetSysAlias(dtmdlADS.qAny);
     with dtmdlADS.qTablesAll do begin
@@ -273,14 +274,14 @@ begin
       Active := true;
     end;
     TablesCount := TablesListFromDict(dtmdlADS.qTablesAll);
-    Path2Src := ExtractFilePath(Pars.Src);
+    //Path2Src := ExtractFilePath(Pars.Src);
 
     //Pars.TotTbls := TablesCount;
     if (TablesCount = 0 ) then
       Result := UE_NO_ADS
     else
       Result := 0;
-    Conn.IsConnected := False;
+    SrcConn.IsConnected := False;
   end
   else
     Result := UE_BAD_USER;
@@ -306,7 +307,7 @@ begin
           // все непроверенные или отмеченные
           Edit;
 
-          TableInf := TDictTable.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.cnnSrcAds);
+          TableInf := TDictTable.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.cnnSrcAds, Pars);
           dtmdlADS.FSrcFixInf.AsInteger := Integer(TableInf);
 
           ec := TableInf.Test1Table(TableInf, TMode, FPars.SysAdsPfx);
@@ -331,16 +332,16 @@ begin
 
     end;
     SrcList.EnableControls;
-    Conn.IsConnected := False;
+    SrcConn.IsConnected := False;
 end;
 
 // Подключение к папке с Free tables
 function TFreeList.PathAvail: Boolean;
 begin
-  Path2Src := IncludeTrailingPathDelimiter(Pars.Src);
-  Conn.ConnectPath := Path2Src;
-  Conn.Connect;
-  Result := Conn.IsConnected;
+  //Path2Src := IncludeTrailingPathDelimiter(Pars.Src);
+  SrcConn.ConnectPath := Pars.Path2Src;
+  SrcConn.Connect;
+  Result := SrcConn.IsConnected;
 end;
 
 function TFreeList.TablesListFromPath(QA: TAdsQuery): Integer;
@@ -377,7 +378,7 @@ end;
 
 
 // Построение списка свбодных таблиц для восстановления
-function TFreeList.List4Fix(AppPars : TAppPars) : Integer;
+function TFreeList.FillList4Fix(AppPars : TAppPars) : Integer;
 begin
   Pars := AppPars;
   if (PathAvail = True) then begin
@@ -396,7 +397,7 @@ begin
   end
   else
     Result := UE_BAD_PATH;
-    Conn.IsConnected := False;
+    SrcConn.IsConnected := False;
 end;
 
 // Тестирование всех или только отмеченных
@@ -417,7 +418,7 @@ begin
           // все непроверенные или отмеченные
           Edit;
 
-          TableInf := TFreeTable.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.cnnSrcAds);
+          TableInf := TFreeTable.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.cnnSrcAds, Pars);
           dtmdlADS.FSrcFixInf.AsInteger := Integer(TableInf);
 
           ec := TableInf.Test1Table(TableInf, TMode);
@@ -442,7 +443,7 @@ begin
 
     end;
     SrcList.EnableControls;
-    Conn.IsConnected := False;
+    SrcConn.IsConnected := False;
 end;
 
 {
