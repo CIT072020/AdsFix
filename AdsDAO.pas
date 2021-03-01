@@ -6,7 +6,7 @@ uses
   SysUtils, Classes, adsset, adscnnct, DB,
   adsdata, adsfunc, adstable, ace,
   kbmMemTable,
-  ServiceProc;
+  uServiceProc;
 
 type
   TdtmdlADS = class(TDataModule)
@@ -34,6 +34,7 @@ type
     qDupGroups: TAdsQuery;
     tblTmp: TAdsTable;
     dsPlan: TDataSource;
+    FSrcFixLog: TMemoField;
     procedure DataModuleCreate(Sender: TObject);
   private
     FSysAlias : string;
@@ -57,17 +58,19 @@ type
     FAdsConn : TAdsConnection;
     FTblList : TkbmMemTable;
     FTCount  : Integer;
+    FFilled  : Boolean;
   protected
   public
     property Pars : TAppPars read FPars write FPars;
-    // путь к словарю/таблице
-    //property Path2Src : string read FSrcPath write FSrcPath;
     // MemTable со списком
     property SrcList : TkbmMemTable read FTblList write FTblList;
     property SrcConn : TAdsConnection read FAdsConn write FAdsConn;
     property TablesCount : Integer read FTCount write FTCount;
+    property Filled : Boolean read FFilled write FFilled;
 
-    function FillList4Fix(AppPars : TAppPars) : Integer; virtual; abstract;
+    // Создать список таблиц ADS
+    function FillList4Fix(TableName : string = '') : Integer; virtual; abstract;
+
     // Тестирование всех или только отмеченных
     procedure TestSelected(ModeAll : Boolean; TMode : TestMode);  virtual; abstract;
 
@@ -80,16 +83,12 @@ type
   // Список таблиц на базе словаря ADS
   TDictList = class(TAdsList)
   private
-    //FDictPath : string;
-
     function DictAvail : Boolean;
     function TablesListFromDict(QA: TAdsQuery): Integer;
   protected
   public
-    //property DictFullPath : string read FDictPath write FDictPath;
-
     // Создать список таблиц на базе словаря ADS
-    function FillList4Fix(AppPars : TAppPars) : Integer; override;
+    function FillList4Fix(TableName : string = '') : Integer; override;
     // Тестирование всех или только отмеченных
     procedure TestSelected(ModeAll : Boolean; TMode : TestMode);override;
   published
@@ -103,15 +102,16 @@ type
   protected
   public
     // Создать список свбодных таблиц
-    function FillList4Fix(AppPars : TAppPars) : Integer; override;
+    function FillList4Fix(TableName : string = '') : Integer; override;
     // Тестирование всех или только отмеченных
     procedure TestSelected(ModeAll : Boolean; TMode : TestMode); override;
   published
   end;
 
-
 //---
+// добавление префикса /ANSI_ (начиная с версия 10)
 function SetSysAlias(QV : TAdsQuery) : string;
+// установка/сброс сортировки списка таблиц по статусу
 procedure SortByState(SetNow : Boolean);
 
 var
@@ -123,11 +123,12 @@ uses
   Controls,
   StrUtils,
   FileUtil,
-  TableUtils,
-  FixDups, AuthF;
+  uTableUtils,
+  uFixDups,
+  AuthF;
 {$R *.dfm}
 
-// установка сортировки списка таблиц по статусу
+// установка/сброс сортировки списка таблиц по статусу
 procedure SortByState(SetNow : Boolean);
 begin
   if (SetNow = True) then
@@ -137,7 +138,7 @@ begin
 end;
 
 
-// установка сортировки списка таблиц по статусу
+// добавление сортировки списка таблиц по статусу
 procedure TdtmdlADS.DataModuleCreate(Sender: TObject);
 begin
   dtmdlADS.mtSrc.AddIndex(IDX_SRC, 'State', [ixDescending]);
@@ -145,6 +146,7 @@ begin
 end;
 
 // добавление префикса /ANSI_ (начиная с версия 10)
+// для системных таблиц ADS
 function SetSysAlias(QV: TAdsQuery): string;
 begin
   Result := 'SYSTEM.';
@@ -174,13 +176,14 @@ begin
   else
     SrcConn := dtmdlADS.cnnSrcAds;
   SrcList := dtmdlADS.mtSrc;
+  Filled  := False;
 end;
-
 
 destructor TAdsList.Destroy;
 begin
   inherited Destroy;
 end;
+
 
 // Проверка корректности подключения к словарной базе
 function TDictList.DictAvail : Boolean;
@@ -207,11 +210,11 @@ begin
     try
     //подключаемся к базе
       SrcConn.IsConnected := False;
-      SrcConn.Username := Pars.ULogin;
-      SrcConn.Password := Pars.UPass;
+      SrcConn.Username    := Pars.ULogin;
+      SrcConn.Password    := Pars.UPass;
       SrcConn.ConnectPath := Pars.Src;
-      SrcConn.IsConnected := True;
-      Result := True;
+      SrcConn.Connect;
+      Result := SrcConn.IsConnected;
     except
       Pars.ULogin := USER_EMPTY;
     end;
@@ -226,10 +229,9 @@ var
   TblCapts: TStringList;
 begin
   i := 0;
+  SrcList.Close;
+  SrcList.Active := True;
   with QA do begin
-    SrcList.Close;
-    SrcList.Active := True;
-
     First;
     while not Eof do begin
       i := i + 1;
@@ -260,27 +262,27 @@ begin
 end;
 
 // Построение словарного списка таблиц для восстановления
-function TDictList.FillList4Fix(AppPars : TAppPars) : Integer;
+function TDictList.FillList4Fix(TableName : string = '') : Integer;
 begin
-  Pars := AppPars;
-  //DictFullPath := Pars.Src;
+  Filled  := False;
   if (DictAvail = True) then begin
     Pars.SysAdsPfx := SetSysAlias(dtmdlADS.qAny);
+    if (TableName <> '') then
+      TableName := Format(' WHERE (NAME=''%s'')', [TableName]);
     with dtmdlADS.qTablesAll do begin
       Active := false;
       AdsCloseSQLStatement;
       SQL.Clear;
-      SQL.Add('SELECT * FROM ' + dtmdlADS.SYSTEM_ALIAS + 'TABLES');
+      SQL.Add('SELECT * FROM ' + dtmdlADS.SYSTEM_ALIAS + 'TABLES' + TableName);
       Active := true;
     end;
     TablesCount := TablesListFromDict(dtmdlADS.qTablesAll);
-    //Path2Src := ExtractFilePath(Pars.Src);
-
-    //Pars.TotTbls := TablesCount;
     if (TablesCount = 0 ) then
       Result := UE_NO_ADS
-    else
-      Result := 0;
+    else begin
+      Result := UE_OK;
+      Filled := True;
+    end;
     SrcConn.IsConnected := False;
   end
   else
@@ -293,8 +295,6 @@ var
   ec, i: Integer;
   TableInf : TDictTable;
 begin
-    // when progress bar be ready - actually
-    //SrcList.DisableControls;
 
     with SrcList do begin
 
@@ -331,14 +331,13 @@ begin
       First;
 
     end;
-    SrcList.EnableControls;
     SrcConn.IsConnected := False;
 end;
 
 // Подключение к папке с Free tables
 function TFreeList.PathAvail: Boolean;
 begin
-  //Path2Src := IncludeTrailingPathDelimiter(Pars.Src);
+  SrcConn.IsConnected := False;
   SrcConn.ConnectPath := Pars.Path2Src;
   SrcConn.Connect;
   Result := SrcConn.IsConnected;
@@ -348,13 +347,11 @@ function TFreeList.TablesListFromPath(QA: TAdsQuery): Integer;
 var
   i: Integer;
   s: string;
-  TblCapts: TStringList;
 begin
   i := 0;
+  SrcList.Close;
+  SrcList.Active := True;
   with QA do begin
-    SrcList.Close;
-    SrcList.Active := True;
-
     First;
     while not Eof do begin
       i := i + 1;
@@ -378,22 +375,29 @@ end;
 
 
 // Построение списка свбодных таблиц для восстановления
-function TFreeList.FillList4Fix(AppPars : TAppPars) : Integer;
+function TFreeList.FillList4Fix(TableName : string = '') : Integer;
+var
+  wich : string;
 begin
-  Pars := AppPars;
+  Filled := False;
   if (PathAvail = True) then begin
+    if (TableName = '') then
+      wich := 'NULL'
+    else
+      wich := '''' + TableName + '''';
     Pars.SysAdsPfx := SetSysAlias(dtmdlADS.qAny);
     dtmdlADS.qTablesAll.AdsCloseSQLStatement;
     dtmdlADS.qTablesAll.SQL.Clear;
-    dtmdlADS.qTablesAll.SQL.Add('SELECT * FROM (EXECUTE PROCEDURE sp_GetTables(NULL,NULL,NULL, ''TABLE'')) AS tmpAllT;');
+    dtmdlADS.qTablesAll.SQL.Add('SELECT * FROM (EXECUTE PROCEDURE sp_GetTables(NULL,NULL,' + wich + ', ''TABLE'')) AS tmpAllT;');
     dtmdlADS.qTablesAll.Active := True;
 
     TablesCount := TablesListFromPath(dtmdlADS.qTablesAll);
-    //Pars.TotTbls := TablesCount;
     if (TablesCount = 0 ) then
       Result := UE_NO_ADS
-    else
-      Result := 0;
+    else begin
+      Result := UE_OK;
+      Filled := True;
+    end;
   end
   else
     Result := UE_BAD_PATH;
@@ -462,76 +466,5 @@ begin
 end;
 }
 
-// Список таблиц - в MemTable
-{
-function TablesListFromDic(QA: TAdsQuery): Integer;
-var
-  i: Integer;
-  s: string;
-  TblCapts: TStringList;
-begin
-  i := 0;
-  with QA do begin
-    //ClearTablesList(QA.Owner);
-    dtmdlADS.mtSrc.Close;
-    dtmdlADS.mtSrc.Active := True;
 
-    First;
-    while not Eof do begin
-      i := i + 1;
-      dtmdlADS.mtSrc.Append;
-
-      dtmdlADS.FSrcNpp.AsInteger  := i;
-      dtmdlADS.FSrcMark.AsBoolean := False;
-      dtmdlADS.FSrcTName.AsString := FieldByName('NAME').AsString;
-      try
-        TblCapts := Split('.', FieldByName('COMMENT').AsString);
-        s := TblCapts[TblCapts.Count - 1];
-      except
-        s := '';
-      end;
-      if (Length(s) = 0) then
-        s := '<' + dtmdlADS.FSrcTName.AsString + '>';
-
-      dtmdlADS.FSrcTCaption.AsString := s;
-      dtmdlADS.FSrcTestCode.AsInteger := 0;
-      dtmdlADS.FSrcState.AsInteger := TST_UNKNOWN;
-      dtmdlADS.FSrcFixInf.AsInteger := 0;
-
-      dtmdlADS.mtSrc.Post;
-      Next;
-    end;
-  end;
-  Result := i;
-end;
-
-
-
-function PrepareList(Path2Dic: string) : Integer;
-//var
-  //aPars: AParams;
-begin
-  Result := 0;
-  if (AppPars.IsDict = True) then begin
-    // Through dictionary
-    if (dtmdlADS.conAdsBase.IsConnected = False) then
-      dtmdlADS.conAdsBase.IsConnected := True;
-    AppPars.SysAdsPfx := SetSysAlias(dtmdlADS.qAny);
-    with dtmdlADS.qTablesAll do begin
-      Active := false;
-      AdsCloseSQLStatement;
-      SQL.Clear;
-      SQL.Add('SELECT * FROM ' + dtmdlADS.SYSTEM_ALIAS + 'TABLES');
-      Active := true;
-    end;
-    //AppPars.TotTbls := TablesListFromDic(dtmdlADS.qTablesAll);
-    Result := AppPars.TotTbls;
-  end
-  else begin
-    // Free tables
-
-  end;
-
-end;
-}
 end.

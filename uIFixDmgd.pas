@@ -4,7 +4,7 @@ interface
 
 uses
   adstable,
-  TableUtils;
+  uTableUtils;
 
 type
   IFixDamaged = Interface
@@ -19,7 +19,7 @@ implementation
 uses
   SysUtils,
   Classes,
-  ServiceProc;
+  uServiceProc;
 
 
 // ƒобавить еще интервал хороших записей, если нужно

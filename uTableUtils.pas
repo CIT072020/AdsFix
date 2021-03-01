@@ -1,4 +1,4 @@
-unit TableUtils;
+unit uTableUtils;
 
 interface
 
@@ -6,7 +6,7 @@ uses
   SysUtils,
   Classes, DB,
   AdsData, Ace, AdsTable, AdsCnnct,
-  ServiceProc;
+  uServiceProc;
 
 type
   // описание полей таблицы

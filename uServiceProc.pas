@@ -1,4 +1,4 @@
-unit ServiceProc;
+unit uServiceProc;
 
 interface
 
@@ -118,7 +118,11 @@ const
   // Its impossible
   UE_SORRY    = 13000;
 
-const
+  CONNECTIONTYPE_DIRBROWSE = 'Выберите папку...';
+  CONNECTIONTYPE_DDBROWSE  = 'Выберите файл словаря...';
+  DATA_DICTIONARY_FILTER = 'Advantage Data Dictionaries (*.ADD)|*.ADD|All Files (*.*)|*.*';
+  DATA_DIR_FILTER = 'Advantage Data Tables (*.ADT)|All Files (*.*)|*.*';
+  DIR_4TMP_FILTER = 'Advantage Data Dictionaries (*.ADD)|*.ADD|All Files (*.*)|*.*';
   EMSG_BAD_DATA  : string = 'Некорректные данные!';
   EMSG_SORRY     : string = 'Восстановление невозможно..Пробуйте AdtFix...';
   EMSG_TBL_EMPTY : string = 'Таблица пуста!';
@@ -211,6 +215,7 @@ type
   end;
 
 
+function IsCorrectTmp(Path2Tmp: string): string;
 function FType2ADS(FT : TFieldType) : Integer ;
 function SQLType2ADS(SQLType : string) : Integer ;
 function CopyOneFile(const Src, Dst: string): Integer;
@@ -220,7 +225,7 @@ function BrowseDir(hOwner: HWND; out SResultDir: string; const SDefaultDir:
   string = ''; const STitle: string = 'Выберите папку'): Boolean;
 
 var
-  AppPars : TAppPars;
+  AppFixPars : TAppPars;
 
 implementation
 
@@ -295,6 +300,15 @@ begin
   if (FSrc <> '') then
     IsDictionary;
 end;
+
+
+function IsCorrectTmp(Path2Tmp: string): string;
+begin
+  Result := '';
+  if (DirectoryExists(Path2Tmp)) then
+    Result := IncludeTrailingPathDelimiter(Path2Tmp);
+end;
+
 
 
 // Перевод TFieldType в ADS-типы (ace.pas)

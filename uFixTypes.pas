@@ -1,4 +1,4 @@
-unit FixTypes;
+unit uFixTypes;
 
 interface
 
@@ -14,10 +14,10 @@ uses
   ace,
   kbmMemTable,
   //EncdDecd,
-  ServiceProc,
+  uServiceProc,
   AdsDAO,
-  FixDups,
-  TableUtils;
+  uFixDups,
+  uTableUtils;
 
 type
   IFixErrs = Interface
@@ -34,8 +34,10 @@ type
     FTblList : TAdsList;
     function TblErrorController(SrcTbl: TTableInf): Integer;
     function ChangeOriginal(P2Src, P2Tmp: string; SrcTbl: TTableInf): Boolean;
-    function FullFixOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer; Q: TAdsQuery): TTableInf;
+    function RecoverOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer; Q: TAdsQuery): TTableInf;
   protected
+    // Проверить и исправить отмеченные
+    procedure RecoverAllBase(FixAll : Boolean = True);
   public
     // Параметры проверки и исправления
     property FixPars : TAppPars read FPars write FPars;
@@ -43,16 +45,7 @@ type
     property FixList : TAdsList read FTblList write FTblList;
 
     // Проверить и исправить все, что обнаружится
-    procedure FullFix;
-
-    // Проверить и исправить отмеченные
-    procedure FullFixAllMarked(FixAll : Boolean = True);
-
-    // Исправить отмеченные
-    procedure FixAllMarked;
-
-    // Применить исправления
-    procedure ChangeOriginalAllMarked;
+    procedure RecoverAll(TableName : string = '');
 
     constructor Create(FixBasePars: TAppPars); overload;
     constructor Create(IniName : string; Path2Fix : string = ''); overload;
@@ -60,8 +53,26 @@ type
   published
   end;
 
+  TFixBaseUI = class(TFixBase)
+  // Класс исправления ошибок в таблицах ADS
+  private
+  protected
+  public
+    // Проверить и исправить все отмеченные
+    procedure RecoverMarked;
+
+    // Исправить отмеченные
+    procedure FixAllMarked;
+
+    // Применить исправления
+    procedure ApplyFixMarked;
+  published
+  end;
+
+
 var
-  FixBase : TFixBase;
+  //FixBase   : TFixBase;
+  FixBaseUI : TFixBaseUI;
 
 implementation
 
@@ -95,23 +106,6 @@ begin
 
 end;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // вызов метода для кода ошибки
 function TFixBase.TblErrorController(SrcTbl: TTableInf): Integer;
 var
@@ -122,7 +116,7 @@ begin
     //if (dtmdlADS.cnABTmp.IsConnected) then
     dtmdlADS.cnnTmp.IsConnected := False;
 
-    dtmdlADS.cnnTmp.ConnectPath := AppPars.Path2Tmp;
+    dtmdlADS.cnnTmp.ConnectPath := FixPars.Path2Tmp;
     dtmdlADS.cnnTmp.IsConnected := True;
 
     //if (dtmdlADS.tblTmp.Active = True) then
@@ -135,7 +129,7 @@ begin
     case SrcTbl.ErrInfo.ErrClass of
       7008, 7207:
         begin
-            FixDupU := TFixUniq.Create(SrcTbl, AppPars);
+            FixDupU := TFixUniq.Create(SrcTbl, FixPars);
             SrcTbl.RowsFixed := FixDupU.Fix7207;
         end;
       7200:
@@ -146,7 +140,7 @@ begin
             FixState := FIX_NOTHG;
           end
           else begin
-            FixDupU := TFixUniq.Create(SrcTbl, AppPars);
+            FixDupU := TFixUniq.Create(SrcTbl, FixPars);
             SrcTbl.RowsFixed := FixDupU.Fix7207;
           end;
         end;
@@ -330,7 +324,7 @@ end;
 
 
 // Исправить оригинал для отмеченных
-procedure TFixBase.ChangeOriginalAllMarked;
+procedure TFixBaseUI.ApplyFixMarked;
 var
   GoodChange: Boolean;
   i: Integer;
@@ -378,7 +372,7 @@ end;
 
 
 // Исправить все отмеченные
-procedure TFixBase.FixAllMarked;
+procedure TFixBaseUI.FixAllMarked;
 var
   ErrCode, i: Integer;
   SetBad : Boolean;
@@ -386,7 +380,7 @@ var
   FixList : TAdsList;
 begin
   SetBad := False;
-  with FixBase.FixList.SrcList do begin
+  with FixList.SrcList do begin
     First;
     i := 0;
     while not Eof do begin
@@ -398,7 +392,7 @@ begin
           // Тестирование выполнялось, объект создан
           Edit;
 
-          ErrCode := SrcTbl.SetWorkCopy(AppPars.Path2Tmp);
+          ErrCode := SrcTbl.SetWorkCopy(FixPars.Path2Tmp);
           if (ErrCode = 0) then begin
             ErrCode := TblErrorController(SrcTbl);
             dtmdlADS.FSrcState.AsInteger := SrcTbl.ErrInfo.State;
@@ -410,7 +404,7 @@ begin
           end;
 
           Post;
-          if (AppPars.DelDupMode = DDup_USel) then begin
+          if (FixPars.DelDupMode = DDup_USel) then begin
             if (SrcTbl.ErrInfo.State = FIX_GOOD) and (SetBad = False) then begin
               SetBad := True;
               //dtmdlADS.dsPlan.DataSet := SrcTbl.ErrInfo.Plan2Del;
@@ -429,7 +423,7 @@ end;
 
 
 // Полный цикл для одной таблицы
-function TFixBase.FullFixOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer; Q: TAdsQuery): TTableInf;
+function TFixBase.RecoverOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer; Q: TAdsQuery): TTableInf;
 var
   RowsFixed,
   ec, i: Integer;
@@ -448,7 +442,7 @@ begin
 
   if (ec > 0) then begin
     // Ошибки тестирования были
-    ec := SrcTbl.SetWorkCopy(AppPars.Path2Tmp);
+    ec := SrcTbl.SetWorkCopy(FixPars.Path2Tmp);
     if (ec = 0) then begin
       // Исправление копии
       RowsFixed := TblErrorController(SrcTbl);
@@ -465,27 +459,22 @@ end;
 
 //-------------------------------------------------------------
 // Full Proceed для всех/отмеченных
-procedure TFixBase.FullFixAllMarked(FixAll : Boolean = True);
+procedure TFixBase.RecoverAllBase(FixAll : Boolean = True);
 var
   ec, i: Integer;
-  TName: string;
   SrcTbl: TTableInf;
 begin
 
-  SortByState(False);
   with FixList.SrcList do begin
     First;
     i := 0;
     while not Eof do begin
       i := i + 1;
-      if (dtmdlADS.FSrcMark.AsBoolean = True)
-      or (FixAll = True) then begin
-
-        TName := FieldByName('TableName').Value;
-
+      if (FieldByName('IsMark').Value = True)
+        OR (FixAll = True) then begin
         Edit;
-        SrcTbl := FullFixOneTable(TName, FieldByName('Npp').Value, dtmdlADS.FSrcFixInf.AsInteger, dtmdlADS.qAny);
-        dtmdlADS.FSrcFixInf.AsInteger := Integer(SrcTbl);
+        SrcTbl := RecoverOneTable(FieldByName('TableName').Value, FieldByName('Npp').Value, FieldByName('TableInf').Value, dtmdlADS.qAny);
+        FieldValues['TableInf'] := Integer(SrcTbl);
 
         dtmdlADS.FSrcState.AsInteger  := SrcTbl.ErrInfo.State;
         dtmdlADS.FSrcTestCode.AsInteger := SrcTbl.ErrInfo.ErrClass;
@@ -504,26 +493,40 @@ begin
     end;
 
   end;
-  SortByState(True);
 
 end;
 
 //-------------------------------------------------------------
 // Проверить и исправить все
-procedure TFixBase.FullFix;
+procedure TFixBase.RecoverAll(TableName : string = '');
 begin
   if (FixPars.IsDict) then
     FixList := TDictList.Create(FixPars)
   else
     FixList := TFreeList.Create(FixPars);
-  if (FixBase.FixList.FillList4Fix(FixPars) = 0) then begin
-    FixBase.FixList.TestSelected(True, AppPars.TMode);
-    FullFixAllMarked(False);
+
+  if (FixList.FillList4Fix(TableName) = UE_OK) then begin
+    FixList.TestSelected(True, FixPars.TMode);
+    RecoverAllBase;
   end
   else
-  PutError('Таблицы не найдены!');
+    PutError('Таблицы не найдены!');
 
 end;
 
+// Проверить и исправить все отмеченные
+procedure TFixBaseUI.RecoverMarked;
+begin
+
+  if (FixList.Filled) then begin
+    SortByState(False);
+    FixList.TestSelected(True, FixPars.TMode);
+    RecoverAllBase(False);
+    SortByState(True);
+  end
+  else
+    PutError('Таблицы не найдены!');
+
+end;
 
 end.

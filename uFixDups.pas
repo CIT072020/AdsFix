@@ -1,4 +1,4 @@
-unit FixDups;
+unit uFixDups;
 
 interface
 
@@ -7,7 +7,9 @@ uses
   kbmMemTable,
   //EncdDecd,
   //FixTypes,
-  ServiceProc, AdsDAO, TableUtils;
+  AdsDAO,
+  uServiceProc,
+  uTableUtils;
 
 const
 
@@ -572,6 +574,7 @@ begin
 end;
 
 // вызов метода для кода ошибки
+{
 function TblErrorController(SrcTbl: TTableInf): Integer;
 var
   FixState : Integer;
@@ -628,7 +631,7 @@ begin
   end;
   Result := SrcTbl.RowsFixed;
 end;
-
+}
 
 // Копия оригинала и освобождение таблицы
 {

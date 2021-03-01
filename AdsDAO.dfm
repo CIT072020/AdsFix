@@ -35,6 +35,10 @@ object dtmdlADS: TdtmdlADS
         DataType = ftInteger
       end
       item
+        Name = 'State'
+        DataType = ftInteger
+      end
+      item
         Name = 'IsMark'
         DataType = ftBoolean
       end
@@ -42,10 +46,6 @@ object dtmdlADS: TdtmdlADS
         Name = 'TableName'
         DataType = ftString
         Size = 128
-      end
-      item
-        Name = 'Tested'
-        DataType = ftInteger
       end
       item
         Name = 'TestCode'
@@ -59,6 +59,18 @@ object dtmdlADS: TdtmdlADS
         Name = 'TableCaption'
         DataType = ftString
         Size = 128
+      end
+      item
+        Name = 'AIncs'
+        DataType = ftInteger
+      end
+      item
+        Name = 'ErrNative'
+        DataType = ftInteger
+      end
+      item
+        Name = 'TableInf'
+        DataType = ftInteger
       end>
     IndexDefs = <>
     SortOptions = []
@@ -106,6 +118,10 @@ object dtmdlADS: TdtmdlADS
     end
     object FSrcFixInf: TIntegerField
       FieldName = 'TableInf'
+    end
+    object FSrcFixLog: TMemoField
+      FieldName = 'FixLog'
+      BlobType = ftMemo
     end
   end
   object dsSrc: TDataSource
