@@ -30,7 +30,7 @@ type
   TFixBase = class(TInterfacedObject)
   // Класс исправления ошибок в таблицах ADS
   private
-    FPars    : TAppPars;
+    FPars    : TFixPars;
     FTblList : TAdsList;
     function TblErrorController(SrcTbl: TTableInf): Integer;
     function ChangeOriginal(P2Src, P2Tmp: string; SrcTbl: TTableInf): Boolean;
@@ -40,14 +40,14 @@ type
     procedure RecoverAllBase(FixAll : Boolean = True);
   public
     // Параметры проверки и исправления
-    property FixPars : TAppPars read FPars write FPars;
+    property FixPars : TFixPars read FPars write FPars;
     // Список таблиц (словарь или папка)
     property FixList : TAdsList read FTblList write FTblList;
 
     // Проверить и исправить все, что обнаружится
     procedure RecoverAll(TableName : string = '');
 
-    constructor Create(FixBasePars: TAppPars); overload;
+    constructor Create(FixBasePars: TFixPars); overload;
     constructor Create(IniName : string; Path2Fix : string = ''); overload;
     destructor Destroy; override;
   published
@@ -83,7 +83,7 @@ uses
   uIFixDmgd;
 
 
-constructor TFixBase.Create(FixBasePars : TAppPars);
+constructor TFixBase.Create(FixBasePars : TFixPars);
 begin
   inherited Create;
   FixPars := FixBasePars;
@@ -95,7 +95,7 @@ var
 begin
   inherited Create;
   Ini := TSasaIniFile.Create(IniName);
-  FixPars := TAppPars.Create(Ini);
+  FixPars := TFixPars.Create(Ini);
   if (Path2Fix <> '') then
     FixPars.Src := Path2Fix;
 end;
@@ -377,7 +377,7 @@ var
   ErrCode, i: Integer;
   SetBad : Boolean;
   SrcTbl: TTableInf;
-  FixList : TAdsList;
+  //FixList : TAdsList;
 begin
   SetBad := False;
   with FixList.SrcList do begin

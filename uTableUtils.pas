@@ -69,7 +69,7 @@ type
   TTableInf = class(TInterfacedObject)
   private
     //FSysPfx   : string;
-    FPars    : TAppPars;
+    FPars    : TFixPars;
     procedure FieldsInfo(Q : TAdsQuery); virtual;
     procedure IndexesInfo(SrcTbl: TTableInf; QWork : TAdsQuery); virtual;
   public
@@ -121,7 +121,7 @@ type
     TotalDel  : Integer;
     RowsFixed : Integer;
 
-    property Pars : TAppPars read FPars write FPars;
+    property Pars : TFixPars read FPars write FPars;
 
     //function Test1Table(AdsTI : TTableInf; Check: TestMode): Integer; virtual;
     function Test1Table(AdsTI : TTableInf; Check: TestMode; SysAnsi : string): Integer; virtual;
@@ -129,7 +129,7 @@ type
     // Установка рабочей копии и объекта состояния исправлений
     function SetWorkCopy(P2TMP : string): Integer;
 
-    constructor Create(TName : string; TID : Integer; Conn: TAdsConnection; AppPars : TAppPars);
+    constructor Create(TName : string; TID : Integer; Conn: TAdsConnection; AppPars : TFixPars);
     destructor Destroy; override;
   end;
 
@@ -173,7 +173,7 @@ begin
     end;
 end;
 
-constructor TTableInf.Create(TName : string; TID : Integer; Conn: TAdsConnection; AppPars : TAppPars);
+constructor TTableInf.Create(TName : string; TID : Integer; Conn: TAdsConnection; AppPars : TFixPars);
 var
   PosPoint: Integer;
   cName : string;

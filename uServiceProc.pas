@@ -167,7 +167,7 @@ type
   end;
 
   // Параметры для восстановления
-  TAppPars = class
+  TFixPars = class
   private
     FSrc : String;
     procedure FWriteSrc(const Value : string);
@@ -225,7 +225,7 @@ function BrowseDir(hOwner: HWND; out SResultDir: string; const SDefaultDir:
   string = ''; const STitle: string = 'Выберите папку'): Boolean;
 
 var
-  AppFixPars : TAppPars;
+  AppFixPars : TFixPars;
 
 implementation
 
@@ -247,7 +247,7 @@ begin
   inherited Destroy;
 end;
 
-constructor TAppPars.Create(Ini : TSasaIniFile);
+constructor TFixPars.Create(Ini : TSasaIniFile);
 var
   i : Integer;
 begin
@@ -276,13 +276,13 @@ begin
   end;
 end;
 
-destructor TAppPars.Destroy;
+destructor TFixPars.Destroy;
 begin
   inherited Destroy;
   FreeAndNil(SafeFix);
 end;
 
-function TAppPars.IsDictionary : Boolean;
+function TFixPars.IsDictionary : Boolean;
 begin
   Result := False;
   if (Pos('.ADD', UpperCase(ExtractFileExt(Src))) > 0) then
@@ -294,17 +294,51 @@ begin
       Path2Src := IncludeTrailingPathDelimiter(Src);
 end;
 
-procedure TAppPars.FWriteSrc(const Value : string);
+procedure TFixPars.FWriteSrc(const Value : string);
 begin
   FSrc := Value;
   if (FSrc <> '') then
     IsDictionary;
 end;
 
+function GetEnvironmentTemp : string;
+{Переменные среды}
+var
+  ptr: PChar;
+  PosEqu : Integer;
+  s: string;
+  Done: boolean;
+begin
+  Result := '';
+  s := '';
+  Done := FALSE;
+  ptr := Windows.GetEnvironmentStrings;
+  while Done = false do begin
+    if ptr^ = #0 then begin
+      inc(ptr);
+      if ptr^ = #0 then
+        Done := TRUE
+      else
+        if (LeftStr(UpperCase(s),4) = 'TEMP') OR (LeftStr(UpperCase(s),3) = 'TMP') then begin
+          PosEqu := Pos('=', s);
+          if (PosEqu > 0) then
+            Result := Copy(s, PosEqu + 1, Length(s) - PosEqu);
+          Break;
+        end;
+      s := ptr^;
+    end
+    else
+      s := s + ptr^;
+    inc(ptr);
+  end;
+end;
 
 function IsCorrectTmp(Path2Tmp: string): string;
 begin
+
   Result := '';
+  if (Path2Tmp = '') then
+    Path2Tmp := GetEnvironmentTemp;
   if (DirectoryExists(Path2Tmp)) then
     Result := IncludeTrailingPathDelimiter(Path2Tmp);
 end;

@@ -87,7 +87,7 @@ implementation
 uses
   adstable,
   AdsDAO,
-  FixTypes,
+  uFixTypes,
   uFixDups,
   uServiceProc,
   uTableUtils;
@@ -104,7 +104,7 @@ begin
   cbbPath2Src.Items.Add(CONNECTIONTYPE_DIRBROWSE);
 
   Ini := TSasaIniFile.Create(ChangeFileExt(Application.ExeName, '.INI'));
-  AppFixPars := TAppPars.Create(Ini);
+  AppFixPars := TFixPars.Create(Ini);
 
   cbbPath2Src.Text := AppFixPars.Src;
   btnTblList.Enabled := (Length(cbbPath2Src.Text) > 0);
@@ -203,7 +203,7 @@ end;
 
 procedure TFormMain.edtPath2TmpChange(Sender: TObject);
 begin
-  if Length(edtPath2Tmp.Text) > 0 then
+  //if Length(edtPath2Tmp.Text) > 0 then
     AppFixPars.Path2Tmp := edtPath2Tmp.Text;
 end;
 
@@ -270,6 +270,7 @@ begin
     s := IsCorrectTmp(AppFixPars.Path2Tmp);
     if (Length(s) > 0) then begin
       AppFixPars.Path2Tmp := s;
+      edtPath2Tmp.Text := s;
       dtmdlADS.cnnTmp.IsConnected := False;
       FixBaseUI.FixAllMarked;
       //if (dtmdlADS.conAdsBase.IsConnected = True) then

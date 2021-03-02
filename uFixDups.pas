@@ -37,7 +37,7 @@ type
   // Класс исправления ошибок уникальности индексов
   // в таблицах ADS
   private
-    FPars     : TAppPars;
+    FPars     : TFixPars;
     FTableInf : TTableInf;
     FTmpConn  : TAdsConnection;
     FQDups    : TAdsQuery;
@@ -72,7 +72,7 @@ type
     PlanFixQ : TAdsQuery;
 
     // Параметры проверки и исправления
-    property FixPars : TAppPars read FPars write FPars;
+    property FixPars : TFixPars read FPars write FPars;
     // Объект состояния таблицы
     property SrcTbl : TTableInf read FTableInf write FTableInf;
     // ADS-Connection для папки TMP
@@ -87,9 +87,7 @@ type
     // Исправление ошибок 7200, 7207
     function Fix7207 : Integer;
 
-    //constructor Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection; PlanTable : TAdsTable);
-    //constructor Create(TI : TTableInf; Pars : TAppPars; Cn : TAdsConnection; PlanTable : TAdsTable; PlanQ : TAdsQuery.);
-    constructor Create(TI : TTableInf; Pars : TAppPars);
+    constructor Create(TI : TTableInf; Pars : TFixPars);
     destructor Destroy; override;
   published
   end;
@@ -116,7 +114,7 @@ uses
   uIFixDmgd;
 
 
-constructor TFixUniq.Create(TI : TTableInf; Pars : TAppPars);
+constructor TFixUniq.Create(TI : TTableInf; Pars : TFixPars);
 begin
   SrcTbl  := TI;
   FixPars := Pars;

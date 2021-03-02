@@ -53,7 +53,7 @@ type
   // —писок исходных ADS-таблиц дл€ проверки [и восстановлени€]
   TAdsList = class
   private
-    FPars    : TAppPars;
+    FPars    : TFixPars;
     FSrcPath : string;
     FAdsConn : TAdsConnection;
     FTblList : TkbmMemTable;
@@ -61,7 +61,7 @@ type
     FFilled  : Boolean;
   protected
   public
-    property Pars : TAppPars read FPars write FPars;
+    property Pars : TFixPars read FPars write FPars;
     // MemTable со списком
     property SrcList : TkbmMemTable read FTblList write FTblList;
     property SrcConn : TAdsConnection read FAdsConn write FAdsConn;
@@ -74,7 +74,7 @@ type
     // “естирование всех или только отмеченных
     procedure TestSelected(ModeAll : Boolean; TMode : TestMode);  virtual; abstract;
 
-    constructor Create(APars : TAppPars; Cnct : TAdsConnection = nil);
+    constructor Create(APars : TFixPars; Cnct : TAdsConnection = nil);
     destructor Destroy; override;
   published
 
@@ -167,7 +167,7 @@ begin
 end;
 
 
-constructor TAdsList.Create(APars : TAppPars; Cnct : TAdsConnection = nil);
+constructor TAdsList.Create(APars : TFixPars; Cnct : TAdsConnection = nil);
 begin
   inherited Create;
   Pars := APars;
