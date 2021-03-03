@@ -607,7 +607,8 @@ begin
       end;
 
     end;
-    AdsTI.ErrInfo.State := TST_GOOD;
+    AdsTI.ErrInfo.State  := TST_GOOD;
+    AdsTI.ErrInfo.MsgErr := '';
 
   except
     on E: EADSDatabaseError do begin

@@ -141,13 +141,13 @@ type
   // Режимы тестирования
   TestMode = (Simple, Medium, Slow);
   // Режимы удаления дубликатов
-  TDelDupMode = (DDup_ALL, DDup_EX1, DDup_USel);
+  TDelDupMode = (DDUP_ALL, DDUP_EX1, DDUP_USEL);
 
 type
 
-  TSafeFix = class
   // Класс поддержки создания/восстановления BackUp/рабочих копий для
   // исправления ошибок в таблицах ADS
+  TSafeFix = class
   private
     FUseCopy4Work : Boolean;
     FReWriteWork  : Boolean;
@@ -169,13 +169,15 @@ type
   // Параметры для восстановления
   TFixPars = class
   private
-    FSrc : String;
+    FSrc    : String;
+    FPath2Src : String;
+    FTmp    : String;
+    //FIsDict : Boolean;
     procedure FWriteSrc(const Value : string);
+    procedure FWriteTmp(const Value : string);
+    function  IsDictionary: Boolean;
+  protected
   public
-    IsDict: Boolean;
-    Path2Src : String;
-    Path2Tmp: String;
-
     // Установленные Login/Password
     ULogin: String;
     UPass: String;
@@ -192,6 +194,10 @@ type
     // Флаг тестирования при построении списка таблиц
     AutoTest: Boolean;
 
+    // Флаг авто-смены режима тестирования,
+    // если ошибки не обнаруживаются
+    AutoUpTestMode: Boolean;
+
     // автопоиск наиболее подходящих строк для удаления из дубликатов
     AutoFix: Boolean;
 
@@ -207,15 +213,20 @@ type
 
     // Путь к списоку таблиц (словарь или папка)
     property Src : string read FSrc write FWriteSrc;
+    // Путь к папке с рабочими копиями
+    property Tmp : string read FTmp write FWriteTmp;
+    // Путь к папке таблиц (Free) или словарю
+    property IsDict: Boolean read IsDictionary;
+    
+    property Path2Src : String read FPath2Src;
 
-    function IsDictionary: Boolean;
+    function IsCorrectTmp(Path2Tmp: string): string;
 
     constructor Create(Ini : TSasaIniFile);
     destructor Destroy; override;
   end;
 
 
-function IsCorrectTmp(Path2Tmp: string): string;
 function FType2ADS(FT : TFieldType) : Integer ;
 function SQLType2ADS(SQLType : string) : Integer ;
 function CopyOneFile(const Src, Dst: string): Integer;
@@ -253,25 +264,16 @@ var
 begin
   inherited Create;
   IniFile := Ini;
-
   // Default values
   ULogin := USER_EMPTY;
-  // по умолчанию - простой режим тестирования
-  TMode := Simple;
-  // по умолчанию - удаление всех
-  DelDupMode := DDup_ALL;
 
   try
-    Src      := Ini.ReadString(INI_PATHS, 'SRCPath', '');
-    Path2Tmp := Ini.ReadString(INI_PATHS, 'TMPPath', 'C:\Temp\');
-    AutoTest := Ini.ReadBool(INI_CHECK, 'AutoTest', True);
-    //i := IniFile.ReadInteger(INI_CHECK, 'TestMode', Integer(Simple));
-    TMode := TestMode(IniFile.ReadInteger(INI_CHECK, 'TestMode', Integer(Simple)));
-    //TMode := TestMode(i);
-    //i := Ini.ReadInteger(INI_FIX, 'DelDupMode', Integer(DDup_ALL));
-    DelDupMode := TDelDupMode(Ini.ReadInteger(INI_FIX, 'DelDupMode', Integer(DDup_ALL)));
-    //DelDupMode := TDelDupMode(i);
-    SafeFix := TSafeFix.Create(Ini);
+    Src        := Ini.ReadString(INI_PATHS, 'SRCPath', '');
+    Tmp        := Ini.ReadString(INI_PATHS, 'TMPPath', 'C:\Temp\');
+    AutoTest   := Ini.ReadBool(INI_CHECK, 'AutoTest', True);
+    TMode      := TestMode(IniFile.ReadInteger(INI_CHECK, 'TestMode', Integer(Simple)));
+    DelDupMode := TDelDupMode(Ini.ReadInteger(INI_FIX, 'DelDupMode', Integer(DDUP_EX1)));
+    SafeFix    := TSafeFix.Create(Ini);
   finally
   end;
 end;
@@ -287,11 +289,11 @@ begin
   Result := False;
   if (Pos('.ADD', UpperCase(ExtractFileExt(Src))) > 0) then
     Result := True;
-  IsDict := Result;
-  if (IsDict = True) then
-      Path2Src := ExtractFilePath(Src)
+    //FIsDict := Result;
+  if (Result = True) then
+      FPath2Src := ExtractFilePath(Src)
     else
-      Path2Src := IncludeTrailingPathDelimiter(Src);
+      FPath2Src := IncludeTrailingPathDelimiter(Src);
 end;
 
 procedure TFixPars.FWriteSrc(const Value : string);
@@ -299,6 +301,10 @@ begin
   FSrc := Value;
   if (FSrc <> '') then
     IsDictionary;
+end;
+procedure TFixPars.FWriteTmp(const Value : string);
+begin
+  FTmp := Value;
 end;
 
 function GetEnvironmentTemp : string;
@@ -333,9 +339,10 @@ begin
   end;
 end;
 
-function IsCorrectTmp(Path2Tmp: string): string;
+// Проверка существования и нормализация пути к рабочей папке
+// Для пустого предлагается системный TEMP/TMP
+function TFixPars.IsCorrectTmp(Path2Tmp: string): string;
 begin
-
   Result := '';
   if (Path2Tmp = '') then
     Path2Tmp := GetEnvironmentTemp;

@@ -54,13 +54,16 @@ type
   TAdsList = class
   private
     FPars    : TFixPars;
-    FSrcPath : string;
+    //FSrcPath : string;
     FAdsConn : TAdsConnection;
     FTblList : TkbmMemTable;
     FTCount  : Integer;
     FFilled  : Boolean;
   protected
   public
+    Tested : Integer;
+    // Не прошли тест
+    ErrTested : Integer;
     property Pars : TFixPars read FPars write FPars;
     // MemTable со списком
     property SrcList : TkbmMemTable read FTblList write FTblList;
@@ -237,9 +240,9 @@ begin
       i := i + 1;
       SrcList.Append;
 
-      dtmdlADS.FSrcNpp.AsInteger  := i;
-      dtmdlADS.FSrcMark.AsBoolean := False;
-      dtmdlADS.FSrcTName.AsString := FieldByName('NAME').AsString;
+      SrcList.FieldValues['Npp']       := i;
+      SrcList.FieldValues['IsMark']    := False;
+      SrcList.FieldValues['TableName'] := FieldByName('NAME').AsString;
       try
         TblCapts := Split('.', FieldByName('COMMENT').AsString);
         s := TblCapts[TblCapts.Count - 1];
@@ -247,12 +250,16 @@ begin
         s := '';
       end;
       if (Length(s) = 0) then
-        s := '<' + dtmdlADS.FSrcTName.AsString + '>';
+        s := '<' + FieldByName('NAME').AsString + '>';
 
-      dtmdlADS.FSrcTCaption.AsString := s;
-      dtmdlADS.FSrcTestCode.AsInteger := 0;
-      dtmdlADS.FSrcState.AsInteger := TST_UNKNOWN;
-      dtmdlADS.FSrcFixInf.AsInteger := 0;
+      SrcList.FieldValues['TableCaption'] := s;
+      SrcList.FieldValues['TestCode']     := 0;
+      SrcList.FieldValues['ErrNative']    := 0;
+      SrcList.FieldValues['AIncs']        := 0;
+      SrcList.FieldValues['FixCode']      := 0;
+      SrcList.FieldValues['State']        := TST_UNKNOWN;
+      SrcList.FieldValues['TableInf']     := 0;
+      SrcList.FieldValues['FixLog']       := '';
 
       SrcList.Post;
       Next;
@@ -292,7 +299,7 @@ end;
 // Тестирование всех или только отмеченных
 procedure TDictList.TestSelected(ModeAll : Boolean; TMode : TestMode);
 var
-  ec, i: Integer;
+  ErrCode, i: Integer;
   TableInf : TDictTable;
 begin
 
@@ -300,37 +307,40 @@ begin
 
       First;
       i := 0;
+      ErrTested := 0;
       while not Eof do begin
-        i := i + 1;
-        if ((dtmdlADS.FSrcState.AsInteger = TST_UNKNOWN) AND (ModeAll = True))
-          OR ((dtmdlADS.FSrcMark.AsBoolean = True) AND (ModeAll = False)) then begin
+        if ((FieldValues['State'] = TST_UNKNOWN) AND (ModeAll = True))
+          OR ((FieldValues['IsMark'] = True) AND (ModeAll = False)) then begin
           // все непроверенные или отмеченные
           Edit;
 
-          TableInf := TDictTable.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.cnnSrcAds, Pars);
-          dtmdlADS.FSrcFixInf.AsInteger := Integer(TableInf);
-
-          ec := TableInf.Test1Table(TableInf, TMode, FPars.SysAdsPfx);
-          dtmdlADS.FSrcAIncs.AsInteger := TableInf.FieldsAI.Count;
-          dtmdlADS.FSrcTestCode.AsInteger := ec;
-          if (ec > 0) then begin
-            dtmdlADS.FSrcMark.AsBoolean := True;
-            dtmdlADS.FSrcErrNative.AsInteger := TableInf.ErrInfo.NativeErr;
-            ec := TST_ERRORS;
+          TableInf := TDictTable.Create(FieldValues['TableName'], FieldValues['Npp'], dtmdlADS.cnnSrcAds, Pars);
+          FieldValues['TableInf'] := Integer(TableInf);
+          i := i + 1;
+          ErrCode := TableInf.Test1Table(TableInf, TMode, FPars.SysAdsPfx);
+          FieldValues['AIncs']    := TableInf.FieldsAI.Count;
+          FieldValues['TestCode'] := ErrCode;
+          if (ErrCode > 0) then begin
+            FieldValues['IsMark']    := True;
+            FieldValues['ErrNative'] := TableInf.ErrInfo.NativeErr;
+            FieldValues['FixLog']    := FieldValues['FixLog'] + TableInf.ErrInfo.MsgErr;
+            ErrCode := TST_ERRORS;
+            ErrTested := ErrTested + 1;
           end
           else begin
-            dtmdlADS.FSrcMark.AsBoolean := False;
-            ec := TST_GOOD;
+            FieldValues['IsMark'] := False;
+            ErrCode := TST_GOOD;
             end;
-          dtmdlADS.FSrcState.AsInteger := ec;
+          FieldValues['State'] := ErrCode;
 
           Post;
         end;
         Next;
       end;
       First;
-
     end;
+    Tested := i;
+
     SrcConn.IsConnected := False;
 end;
 

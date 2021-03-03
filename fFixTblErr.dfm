@@ -1,4 +1,4 @@
-object FixShow: TFixShow
+object fmFixAds: TfmFixAds
   Left = 698
   Top = 178
   Width = 627
@@ -11,6 +11,7 @@ object FixShow: TFixShow
   Font.Name = 'Tahoma'
   Font.Style = []
   OldCreateOrder = False
+  OnShow = FormShow
   PixelsPerInch = 96
   TextHeight = 13
   object mmProt: TMemo
@@ -30,6 +31,7 @@ object FixShow: TFixShow
     Caption = #1048#1089#1087#1088#1072#1074#1080#1090#1100
     Enabled = False
     TabOrder = 1
+    OnClick = btnTestAndFixClick
   end
   object btnRet2Orig: TButton
     Left = 228

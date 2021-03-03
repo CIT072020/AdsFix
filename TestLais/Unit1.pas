@@ -20,6 +20,7 @@ type
 
 var
   Form1: TForm1;
+  FixBase : TFixBase;
 
 implementation
 
@@ -31,23 +32,23 @@ uses
 
 procedure TForm1.btnErrOpenClick(Sender: TObject);
 var
-  Path2Table,
-  Path2Tmp   : string;
-  Pars : TFixPars;
-  FormFix : TFixShow;
+  Path2Table, Path2Tmp: string;
+  Pars: TFixPars;
+  FormFix: TfmFixAds;
 begin
   Pars := TFixPars.Create(TSasaIniFile.Create('AdsFix.INI'));
   Pars.Src := 'D:\App\ËÀÈÑ÷\Data\SelSovet.add';
+  FixBase  := TFixBase.Create(Pars);
 
-  FormFix := TFixShow.Create(Self);
-    FormFix.InitPars(Pars); //
-    try
-      if (FormFix.ShowModal = mrOk) then begin
-        FormFix.SetResult;
-      end;
-    finally
-      FreeAndNil(FormFix);
+  FormFix := TfmFixAds.Create(Self);
+  FormFix.InitPars(FixBase); //
+  try
+    if (FormFix.ShowModal = mrOk) then begin
+      FormFix.SetResult;
     end;
+  finally
+    FreeAndNil(FormFix);
+  end;
 end;
 
 

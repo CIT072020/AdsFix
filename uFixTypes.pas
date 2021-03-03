@@ -113,13 +113,10 @@ var
   FixDupU  : TFixUniq;
 begin
   try
-    //if (dtmdlADS.cnABTmp.IsConnected) then
     dtmdlADS.cnnTmp.IsConnected := False;
+    dtmdlADS.cnnTmp.ConnectPath := FixPars.Tmp;
+    dtmdlADS.cnnTmp.Connect;
 
-    dtmdlADS.cnnTmp.ConnectPath := FixPars.Path2Tmp;
-    dtmdlADS.cnnTmp.IsConnected := True;
-
-    //if (dtmdlADS.tblTmp.Active = True) then
     dtmdlADS.tblTmp.Close;
     dtmdlADS.tblTmp.AdsConnection := dtmdlADS.cnnTmp;
 
@@ -345,7 +342,7 @@ begin
           if (SrcTbl.ErrInfo.State = FIX_GOOD) then begin
 
             dtmdlADS.mtSrc.Edit;
-            GoodChange := ChangeOriginal(FixPars.Path2Src, FixPars.Path2Tmp, SrcTbl);
+            GoodChange := ChangeOriginal(FixPars.Path2Src, FixPars.Tmp, SrcTbl);
             //(TFormMain(AppPars.ShowForm)).lblResIns.Caption := IntToStr(SrcTbl.ErrInfo.TotalIns);
             //GoodChange := DAds.ChangeOriginal;
             if (GoodChange = True) then begin
@@ -392,7 +389,7 @@ begin
           // Тестирование выполнялось, объект создан
           Edit;
 
-          ErrCode := SrcTbl.SetWorkCopy(FixPars.Path2Tmp);
+          ErrCode := SrcTbl.SetWorkCopy(FixPars.Tmp);
           if (ErrCode = 0) then begin
             ErrCode := TblErrorController(SrcTbl);
             dtmdlADS.FSrcState.AsInteger := SrcTbl.ErrInfo.State;
@@ -404,7 +401,7 @@ begin
           end;
 
           Post;
-          if (FixPars.DelDupMode = DDup_USel) then begin
+          if (FixPars.DelDupMode = DDUP_USEL) then begin
             if (SrcTbl.ErrInfo.State = FIX_GOOD) and (SetBad = False) then begin
               SetBad := True;
               //dtmdlADS.dsPlan.DataSet := SrcTbl.ErrInfo.Plan2Del;
@@ -442,13 +439,13 @@ begin
 
   if (ec > 0) then begin
     // Ошибки тестирования были
-    ec := SrcTbl.SetWorkCopy(FixPars.Path2Tmp);
+    ec := SrcTbl.SetWorkCopy(FixPars.Tmp);
     if (ec = 0) then begin
       // Исправление копии
       RowsFixed := TblErrorController(SrcTbl);
       if (SrcTbl.ErrInfo.FixErr = 0) then begin
         // Исправление оригинала
-        if (ChangeOriginal(FixPars.Path2Src, FixPars.Path2Tmp, SrcTbl) = True) then
+        if (ChangeOriginal(FixPars.Path2Src, FixPars.Tmp, SrcTbl) = True) then
           SrcTbl.ErrInfo.State := INS_GOOD
         else
           SrcTbl.ErrInfo.State := INS_ERRORS;
@@ -506,6 +503,7 @@ begin
     FixList := TFreeList.Create(FixPars);
 
   if (FixList.FillList4Fix(TableName) = UE_OK) then begin
+    // Тестировать все подряд
     FixList.TestSelected(True, FixPars.TMode);
     RecoverAllBase;
   end

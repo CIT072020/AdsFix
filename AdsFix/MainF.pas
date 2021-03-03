@@ -108,10 +108,10 @@ begin
 
   cbbPath2Src.Text := AppFixPars.Src;
   btnTblList.Enabled := (Length(cbbPath2Src.Text) > 0);
-  edtPath2Tmp.Text := AppFixPars.Path2Tmp;
+  edtPath2Tmp.Text := AppFixPars.Tmp;
 
-  chkAutoTest.Checked    := AppFixPars.AutoTest;
-  rgTestMode.ItemIndex   := Integer(AppFixPars.TMode);
+  chkAutoTest.Checked  := AppFixPars.AutoTest;
+  rgTestMode.ItemIndex := Integer(AppFixPars.TMode);
 
   chkUseWCopy.Checked := AppFixPars.SafeFix.UseCopy4Work;
   chkRewriteCopy.Checked := AppFixPars.SafeFix.ReWriteWork;
@@ -130,10 +130,8 @@ begin
   ProceedBackUps(0);
   Ini := AppFixPars.IniFile;
   try
-    if Length(cbbPath2Src.Text) > 0 then
-      Ini.WriteString(INI_PATHS, 'SRCPath', cbbPath2Src.Text);
-    if Length(edtPath2Tmp.Text) > 0 then
-      Ini.WriteSTring(INI_PATHS, 'TMPPath', edtPath2Tmp.Text);
+    Ini.WriteString(INI_PATHS, 'SRCPath', AppFixPars.Src);
+    Ini.WriteSTring(INI_PATHS, 'TMPPath', AppFixPars.Tmp);
 
     Ini.WriteBool(INI_CHECK, 'AutoTest', AppFixPars.AutoTest);
     Ini.WriteInteger(INI_CHECK, 'TestMode', Ord(AppFixPars.TMode));
@@ -195,16 +193,18 @@ begin
 end;
 
 procedure TFormMain.ChangePath2TmpClick(Sender: TObject; var Handled: Boolean);
+var
+  s : string;
 begin
-  if SelectDirectory(AppFixPars.Path2Tmp, [sdAllowCreate, sdPerformCreate, sdPrompt], 0) then begin
-    edtPath2Tmp.Text := IncludeTrailingPathDelimiter(AppFixPars.Path2Tmp);
+  s := AppFixPars.Tmp;
+  if SelectDirectory(s, [sdAllowCreate, sdPerformCreate, sdPrompt], 0) then begin
+    edtPath2Tmp.Text := IncludeTrailingPathDelimiter(s);
   end;
 end;
 
 procedure TFormMain.edtPath2TmpChange(Sender: TObject);
 begin
-  //if Length(edtPath2Tmp.Text) > 0 then
-    AppFixPars.Path2Tmp := edtPath2Tmp.Text;
+    AppFixPars.Tmp := edtPath2Tmp.Text;
 end;
 
 procedure TFormMain.chkBackUpClick(Sender: TObject);
@@ -267,13 +267,12 @@ var
 begin
   TButtonControl(Sender).Enabled := False;
   try
-    s := IsCorrectTmp(AppFixPars.Path2Tmp);
+    s := AppFixPars.IsCorrectTmp(AppFixPars.Tmp);
     if (Length(s) > 0) then begin
-      AppFixPars.Path2Tmp := s;
+      AppFixPars.Tmp := s;
       edtPath2Tmp.Text := s;
       dtmdlADS.cnnTmp.IsConnected := False;
       FixBaseUI.FixAllMarked;
-      //if (dtmdlADS.conAdsBase.IsConnected = True) then
       dtmdlADS.cnnSrcAds.IsConnected := False;
     end;
   finally
