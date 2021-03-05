@@ -50,6 +50,7 @@ type
     chkUseWCopy: TCheckBox;
     chkRewriteCopy: TCheckBox;
     chkBackUp: TCheckBox;
+    btnTTmp: TButton;
     procedure ChangePath2TmpClick(Sender: TObject; var Handled: Boolean);
     procedure btnTblListClick(Sender: TObject);
     procedure btnRestOrigClick(Sender: TObject);
@@ -65,6 +66,7 @@ type
     procedure btnGetFixedClick(Sender: TObject);
     procedure btnTestClick(Sender: TObject);
     procedure btnTestQClick(Sender: TObject);
+    procedure btnTTmpClick(Sender: TObject);
     procedure cbbPath2SrcChange(Sender: TObject);
     procedure chkAutoTestClick(Sender: TObject);
     procedure chkBackUpClick(Sender: TObject);
@@ -86,6 +88,8 @@ implementation
 
 uses
   adstable,
+  adscnnct,
+  adsdata,
   AdsDAO,
   uFixTypes,
   uFixDups,
@@ -370,6 +374,27 @@ begin
   FixBaseUI.RecoverAll(s);
   s := 'xxx';
 
+end;
+
+procedure TFormMain.btnTTmpClick(Sender: TObject);
+var
+  i,j : Integer;
+  s : string;
+  c : TAdsConnection;
+begin
+  try
+  c := dtmdlADS.cnnTmp;
+  c.IsConnected := True;
+  s := 'ALTER TABLE "НаселениеДвижение.adt" ALTER COLUMN ORGAN ORGAN MEMO;';
+  c.Execute(s);
+  except
+    on E: EADSDatabaseError do begin
+      i := E.ACEErrorCode;
+      j := E.SQLErrorCode;
+      s := E.Message;
+    end;
+  end;
+  i := i + j;
 end;
 
 

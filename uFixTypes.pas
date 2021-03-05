@@ -265,7 +265,10 @@ begin
     Conn.IsConnected := True;
     // Очистить таблицу
     if (Conn.IsDictionaryConn = False) then begin
-      Conn.Execute(Format('DELETE FROM "%s"', [SrcTbl.TableName]));
+      //Conn.Execute(Format('DELETE FROM "%s"', [SrcTbl.TableName]));
+      //Conn.Execute(Format('EXECUTE sp_ZapTable(''%s''', [SrcTbl.TableName]));
+      ss := Format('EXECUTE PROCEDURE sp_ZapTable(''%s'')', [SrcTbl.TableName]);
+      Conn.Execute(ss);
     end
     else begin
     // Удалить таблицу + Memo + index

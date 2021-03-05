@@ -709,55 +709,48 @@ end;
 //-------------------------------------------------------------
 
 // Копия оригинала и освобождение таблицы
-function TTableInf.SetWorkCopy(P2TMP : string): Integer;
+function TTableInf.SetWorkCopy(P2TMP: string): Integer;
 var
-
   s, FileSrc, FileSrcNoExt, FileDst: string;
 begin
   Result := UE_BAD_PREP;
 
-  if (Pars.IsDict = True)
-    OR (Pars.SafeFix.UseCopy4Work = True) then begin
+  if (Pars.IsDict = True) OR (Pars.SafeFix.UseCopy4Work = True) then begin
     // Исправления выполняются в копии таблицы
-
     // Предварительные исправления вносятся сюда
-    FileTmp := P2TMP + NameNoExt + ExtADT;
+    FileTmp := P2TMP + NameNoExt;
 
     // Группа файлов в источнике
     FileSrc := Pars.Path2Src + NameNoExt;
-  try
-    s := FileSrc + ExtADT;
-    if (CopyOneFile(s, P2TMP) <> 0) then
-      raise Exception.Create('Ошибка копирования ' + s);
+    try
+      s := FileSrc + ExtADT;
+      if (not FileExists(FileTmp + ExtADT)) OR (Pars.SafeFix.ReWriteWork = True) then
+        if (CopyOneFile(s, P2TMP) <> 0) then
+          raise Exception.Create('Ошибка копирования ' + s);
 
-    s := FileSrc + ExtADM;
-    if FileExists(s) then begin
-      if (CopyOneFile(s, P2TMP) <> 0) then
-        raise Exception.Create('Ошибка копирования ' + s);
-    end;
+      s := FileSrc + ExtADM;
+      if FileExists(s) then begin
+        if (not FileExists(FileTmp + ExtADM)) OR (Pars.SafeFix.ReWriteWork = True) then
+          if (CopyOneFile(s, P2TMP) <> 0) then
+            raise Exception.Create('Ошибка копирования ' + s);
+      end;
 
-      if AdsDDFreeTable(PAnsiChar(FileTmp), nil) = AE_FREETABLEFAILED then
-        if (Pars.IsDict = True) then
-        // Словарная таблица обязательно освобождается
+      if AdsDDFreeTable(PAnsiChar(FileTmp + ExtADT), nil) = AE_FREETABLEFAILED then
+        if ((Pars.IsDict = True) and (Pars.SafeFix.ReWriteWork = True)) then
+        // Словарная таблица (только что скопировали!) обязательно освобождается
           raise EADSDatabaseError.Create(AdsT, UE_BAD_PREP, 'Ошибка освобождения таблицы');
 
-    ErrInfo.PrepErr := 0;
-    Result := 0;
-  except
-    ErrInfo.State := FIX_ERRORS;
-    ErrInfo.PrepErr := UE_BAD_PREP;
-  end;
+      ErrInfo.PrepErr := 0;
+      Result := 0;
+    except
+      ErrInfo.State := FIX_ERRORS;
+      ErrInfo.PrepErr := UE_BAD_PREP;
+    end;
 
   end
   else begin
 
-
-
-
-
   end;
-
-
 end;
 
 

@@ -565,10 +565,17 @@ begin
       // поиск некорректных AUTOINC
       DelOtherDups(SrcTbl);
   except
+    on E: EADSDatabaseError do begin
+      Result := 0;
+      SrcTbl.ErrInfo.ErrClass  := E.ACEErrorCode;
+      SrcTbl.ErrInfo.NativeErr := E.SQLErrorCode;
+      SrcTbl.ErrInfo.MsgErr    := E.Message;
+      SrcTbl.ErrInfo.State     := FIX_ERRORS;
+    end;
   end;
   Result := FDelEmps + FDelDups;
-  //SrcTbl.ErrInfo.Rows4Del := FBadRows;
-  Plan4DelByRowIds;
+  if (Result > 0) then
+    Plan4DelByRowIds;
 end;
 
 // вызов метода для кода ошибки
