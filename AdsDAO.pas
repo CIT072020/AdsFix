@@ -6,6 +6,7 @@ uses
   SysUtils, Classes, adsset, adscnnct, DB,
   adsdata, adsfunc, adstable, ace,
   kbmMemTable,
+  uTableUtils,
   uServiceProc;
 
 type
@@ -59,6 +60,8 @@ type
     FTblList : TkbmMemTable;
     FTCount  : Integer;
     FFilled  : Boolean;
+
+    function TestOneAds(TblPtr : Integer; TMode : TestMode; var AdsTbl : TTableInf) : Integer; virtual; abstract;
   protected
   public
     Tested : Integer;
@@ -75,7 +78,7 @@ type
     function FillList4Fix(TableName : string = '') : Integer; virtual; abstract;
 
     // Тестирование всех или только отмеченных
-    procedure TestSelected(ModeAll : Boolean; TMode : TestMode);  virtual; abstract;
+    procedure TestSelected(ModeAll : Boolean; TMode : TestMode);  virtual;
 
     constructor Create(APars : TFixPars; Cnct : TAdsConnection = nil);
     destructor Destroy; override;
@@ -88,12 +91,11 @@ type
   private
     function DictAvail : Boolean;
     function TablesListFromDict(QA: TAdsQuery): Integer;
+    function TestOneAds(TblPtr : Integer; TMode : TestMode; var AdsTbl : TTableInf) : Integer; override;
   protected
   public
     // Создать список таблиц на базе словаря ADS
     function FillList4Fix(TableName : string = '') : Integer; override;
-    // Тестирование всех или только отмеченных
-    procedure TestSelected(ModeAll : Boolean; TMode : TestMode);override;
   published
   end;
 
@@ -102,12 +104,11 @@ type
   private
     function PathAvail : Boolean;
     function TablesListFromPath(QA: TAdsQuery): Integer;
+    function TestOneAds(TblPtr : Integer; TMode : TestMode; var AdsTbl : TTableInf) : Integer; override;
   protected
   public
     // Создать список свбодных таблиц
     function FillList4Fix(TableName : string = '') : Integer; override;
-    // Тестирование всех или только отмеченных
-    procedure TestSelected(ModeAll : Boolean; TMode : TestMode); override;
   published
   end;
 
@@ -126,7 +127,6 @@ uses
   Controls,
   StrUtils,
   FileUtil,
-  uTableUtils,
   uFixDups,
   AuthF;
 {$R *.dfm}
@@ -258,7 +258,8 @@ begin
       SrcList.FieldValues['AIncs']        := 0;
       SrcList.FieldValues['FixCode']      := 0;
       SrcList.FieldValues['State']        := TST_UNKNOWN;
-      SrcList.FieldValues['TableInf']     := 0;
+      //SrcList.FieldValues['TableInf']     := 0;
+      SrcList.FieldValues['TableInf']     := Integer(TDictTable.Create(FieldByName('NAME').AsString, i, SrcConn, Pars));
       SrcList.FieldValues['FixLog']       := '';
 
       SrcList.Post;
@@ -280,7 +281,7 @@ begin
       Active := false;
       AdsCloseSQLStatement;
       SQL.Clear;
-      SQL.Add('SELECT * FROM ' + dtmdlADS.SYSTEM_ALIAS + 'TABLES' + TableName);
+      SQL.Add('SELECT * FROM ' + Pars.SysAdsPfx + 'TABLES' + TableName);
       Active := true;
     end;
     TablesCount := TablesListFromDict(dtmdlADS.qTablesAll);
@@ -296,15 +297,35 @@ begin
     Result := UE_BAD_USER;
 end;
 
-// Тестирование всех или только отмеченных
-procedure TDictList.TestSelected(ModeAll : Boolean; TMode : TestMode);
+// Тестирование одной (Dictionary)
+function TDictList.TestOneAds(TblPtr : Integer; TMode : TestMode; var AdsTbl : TTableInf) : Integer;
 var
-  ErrCode, i: Integer;
-  TableInf : TDictTable;
+  DT : TDictTable;
 begin
+  DT     := TDictTable(Ptr(TblPtr));
+  AdsTbl := DT;
+  Result := DT.Test1Table(DT, TMode, FPars.SysAdsPfx);
+end;
 
+// Тестирование одной (Free)
+function TFreeList.TestOneAds(TblPtr : Integer; TMode : TestMode; var AdsTbl : TTableInf) : Integer;
+var
+  FT : TFreeTable;
+begin
+  FT := TFreeTable(Ptr(TblPtr));
+  AdsTbl := FT;
+  Result := FT.Test1Table(FT, TMode);
+end;
+
+
+// Тестирование всех или только отмеченных
+procedure TAdsList.TestSelected(ModeAll : Boolean; TMode : TestMode);
+var
+  StateByTest,
+  ErrCode, i: Integer;
+  SrcTbl : TTableInf;
+begin
     with SrcList do begin
-
       First;
       i := 0;
       ErrTested := 0;
@@ -312,27 +333,23 @@ begin
         if ((FieldValues['State'] = TST_UNKNOWN) AND (ModeAll = True))
           OR ((FieldValues['IsMark'] = True) AND (ModeAll = False)) then begin
           // все непроверенные или отмеченные
-          Edit;
-
-          TableInf := TDictTable.Create(FieldValues['TableName'], FieldValues['Npp'], dtmdlADS.cnnSrcAds, Pars);
-          FieldValues['TableInf'] := Integer(TableInf);
           i := i + 1;
-          ErrCode := TableInf.Test1Table(TableInf, TMode, FPars.SysAdsPfx);
-          FieldValues['AIncs']    := TableInf.FieldsAI.Count;
+          Edit;
+          ErrCode := TestOneAds(FieldValues['TableInf'], TMode, SrcTbl);
+          FieldValues['AIncs']    := SrcTbl.FieldsAI.Count;
           FieldValues['TestCode'] := ErrCode;
           if (ErrCode > 0) then begin
             FieldValues['IsMark']    := True;
-            FieldValues['ErrNative'] := TableInf.ErrInfo.NativeErr;
-            FieldValues['FixLog']    := FieldValues['FixLog'] + TableInf.ErrInfo.MsgErr;
-            ErrCode := TST_ERRORS;
+            FieldValues['ErrNative'] := SrcTbl.ErrInfo.NativeErr;
+            FieldValues['FixLog']    := FieldValues['FixLog'] + SrcTbl.ErrInfo.MsgErr;
+            StateByTest := TST_ERRORS;
             ErrTested := ErrTested + 1;
           end
           else begin
             FieldValues['IsMark'] := False;
-            ErrCode := TST_GOOD;
+            StateByTest := TST_GOOD;
             end;
-          FieldValues['State'] := ErrCode;
-
+          FieldValues['State'] := StateByTest;
           Post;
         end;
         Next;
@@ -340,7 +357,6 @@ begin
       First;
     end;
     Tested := i;
-
     SrcConn.IsConnected := False;
 end;
 
@@ -366,16 +382,17 @@ begin
     while not Eof do begin
       i := i + 1;
       SrcList.Append;
-
-      dtmdlADS.FSrcNpp.AsInteger  := i;
-      dtmdlADS.FSrcMark.AsBoolean := False;
-      dtmdlADS.FSrcTName.AsString := FieldByName('TABLE_NAME').AsString;
-
-      dtmdlADS.FSrcTCaption.AsString := '<' + dtmdlADS.FSrcTName.AsString + '>';
-      dtmdlADS.FSrcTestCode.AsInteger := 0;
-      dtmdlADS.FSrcState.AsInteger := TST_UNKNOWN;
-      dtmdlADS.FSrcFixInf.AsInteger := 0;
-
+      SrcList.FieldValues['Npp']          := i;
+      SrcList.FieldValues['IsMark']       := False;
+      SrcList.FieldValues['TableName']    := FieldByName('TABLE_NAME').AsString;
+      SrcList.FieldValues['TableCaption'] := '<' + FieldByName('TABLE_NAME').AsString + '>';
+      SrcList.FieldValues['TestCode']     := 0;
+      SrcList.FieldValues['ErrNative']    := 0;
+      SrcList.FieldValues['AIncs']        := 0;
+      SrcList.FieldValues['FixCode']      := 0;
+      SrcList.FieldValues['State']        := TST_UNKNOWN;
+      SrcList.FieldValues['TableInf']     := Integer(TFreeTable.Create(FieldByName('TABLE_NAME').AsString, i, SrcConn, Pars));
+      SrcList.FieldValues['FixLog']       := '';
       SrcList.Post;
       Next;
     end;
@@ -415,6 +432,7 @@ begin
 end;
 
 // Тестирование всех или только отмеченных
+{
 procedure TFreeList.TestSelected(ModeAll : Boolean; TMode : TestMode);
 var
   ec, i: Integer;
@@ -459,6 +477,7 @@ begin
     SrcList.EnableControls;
     SrcConn.IsConnected := False;
 end;
+}
 
 {
 procedure ClearTablesList(Owner : TComponent);
