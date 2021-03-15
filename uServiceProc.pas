@@ -4,6 +4,7 @@ interface
 
 uses
   Windows, SysUtils, Classes, StrUtils, Forms, DB,
+  Contnrs,
   ShlObj,
   adsdata,
   ace,
@@ -178,21 +179,22 @@ type
     function  IsDictionary: Boolean;
   protected
   public
-    // Установленные Login/Password
+    // Установленные Login/Password для открытия словаря
     ULogin: String;
     UPass: String;
 
-    // всего таблиц
-    //TotTbls  : Integer;
+    LogLevel : Integer;
 
+    // Начиная с 10-й версии ADS добавлется префикс ANSI для системных таблиц
+    SysAdsPfx: string;
+
+    // Флаг тестирования при построении списка таблиц
+    AutoTest: Boolean;
     // Режим тестирования
     TMode: TestMode;
 
     // Способ удаления дубликатов
     DelDupMode: TDelDupMode;
-
-    // Флаг тестирования при построении списка таблиц
-    AutoTest: Boolean;
 
     // Флаг авто-смены режима тестирования,
     // если ошибки не обнаруживаются
@@ -200,9 +202,6 @@ type
 
     // автопоиск наиболее подходящих строк для удаления из дубликатов
     AutoFix: Boolean;
-
-    // FixDupsMode : Integer;
-    SysAdsPfx: string;
 
     IniFile : TSasaIniFile;
     // Form to show result
@@ -215,9 +214,11 @@ type
     property Src : string read FSrc write FWriteSrc;
     // Путь к папке с рабочими копиями
     property Tmp : string read FTmp write FWriteTmp;
-    // Путь к папке таблиц (Free) или словарю
+
+    // Тип источника - Free или словарь
     property IsDict: Boolean read IsDictionary;
-    
+
+    // Путь к папке с исходными таблицами
     property Path2Src : String read FPath2Src;
 
     function IsCorrectTmp(Path2Tmp: string): string;
@@ -226,6 +227,31 @@ type
     destructor Destroy; override;
   end;
 
+  TSingleton = class(TObject)
+  private
+    class procedure RegisterInstance(Instance : TSingleton);
+    procedure UnRegisterInstance;
+    class function FindInstance: TSingleton;
+  protected
+    constructor Create; virtual;
+  public
+    class function NewInstance: TObject; override;
+    procedure BeforeDestruction; override;
+    constructor GetInstance;
+  end;
+
+  TLogFile = class(TSingleton)
+    private
+      FLogName : string;
+    protected
+      constructor Create; override;
+    public
+      procedure AddMsg(const Value : string);
+      destructor Destroy; override;
+    published
+  end;
+
+function LogText : TLogFile;
 
 function FType2ADS(FT : TFieldType) : Integer ;
 function SQLType2ADS(SQLType : string) : Integer ;
@@ -237,13 +263,37 @@ function BrowseDir(hOwner: HWND; out SResultDir: string; const SDefaultDir:
 
 var
   AppFixPars : TFixPars;
+  SingletonList : TObjectList;
 
 implementation
 
 uses
   FileUtil,
-  DBFunc;
+  DBFunc,
+  FuncPr;
 
+constructor TLogFile.Create;
+begin
+  inherited Create;
+  // Any foo
+  FLogName := 'FixLog.log';
+end;
+
+destructor TLogFile.Destroy;
+begin
+  // Any foo
+  inherited Destroy;
+end;
+
+function LogText : TLogFile;
+begin
+  Result := TLogFile.GetInstance;
+end;
+
+procedure TLogFile.AddMsg(const Value : string);
+begin
+  MemoWrite(FLogName, Value);
+end;
 
 constructor TSafeFix.Create(Ini : TSasaIniFile);
 begin
@@ -259,17 +309,13 @@ begin
 end;
 
 constructor TFixPars.Create(Ini : TSasaIniFile);
-var
-  i : Integer;
 begin
   inherited Create;
   IniFile := Ini;
-  // Default values
   ULogin := USER_EMPTY;
-
   try
     Src        := Ini.ReadString(INI_PATHS, 'SRCPath', '');
-    Tmp        := Ini.ReadString(INI_PATHS, 'TMPPath', 'C:\Temp\');
+    Tmp        := Ini.ReadString(INI_PATHS, 'TMPPath', '');
     AutoTest   := Ini.ReadBool(INI_CHECK, 'AutoTest', True);
     TMode      := TestMode(IniFile.ReadInteger(INI_CHECK, 'TestMode', Integer(Simple)));
     DelDupMode := TDelDupMode(Ini.ReadInteger(INI_FIX, 'DelDupMode', Integer(DDUP_EX1)));
@@ -306,6 +352,7 @@ procedure TFixPars.FWriteTmp(const Value : string);
 begin
   FTmp := Value;
 end;
+
 
 function GetEnvironmentTemp : string;
 {Переменные среды}
@@ -784,5 +831,76 @@ begin
 end;
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+{ TSingleton }
+procedure TSingleton.BeforeDestruction;
+begin
+  UnregisterInstance;
+  inherited BeforeDestruction;
+end;
+
+constructor TSingleton.Create;
+begin
+  inherited Create;
+end;
+
+class function TSingleton.FindInstance : TSingleton;
+var
+  i: Integer;
+begin
+  Result := nil;
+  for i := 0 to SingletonList.Count - 1 do
+    if SingletonList[i].ClassType = Self
+    then begin
+      Result := TSingleton(SingletonList[i]);
+      Break;
+    end;
+end;
+
+constructor TSingleton.GetInstance;
+begin
+  inherited Create;
+end;
+
+class function TSingleton.NewInstance: TObject;
+begin
+  Result := FindInstance;
+  if Result = nil then begin
+    Result := inherited NewInstance;
+    TSingleton(Result).Create;
+    RegisterInstance(TSingleton(Result));
+  end;
+end;
+
+class procedure TSingleton.RegisterInstance(Instance : TSingleton);
+begin
+  SingletonList.Add(Instance);
+end;
+
+procedure TSingleton.UnRegisterInstance;
+begin
+  SingletonList.Extract(Self);
+end;
+
+initialization
+  SingletonList := TObjectList.Create(True);
+
+finalization
+  SingletonList.Free;
 
 end.

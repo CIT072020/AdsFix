@@ -90,6 +90,7 @@ uses
   adstable,
   adscnnct,
   adsdata,
+  ace,
   AdsDAO,
   uFixTypes,
   uFixDups,
@@ -381,12 +382,22 @@ var
   i,j : Integer;
   s : string;
   c : TAdsConnection;
+  hCn,
+  hTbl : ADSHANDLE;
 begin
   try
+  s := AppFixPars.IsCorrectTmp(AppFixPars.Tmp);
   c := dtmdlADS.cnnTmp;
+  //c.ConnectPath := AppFixPars.Tmp;
   c.IsConnected := True;
-  s := 'ALTER TABLE "НаселениеДвижение.adt" ALTER COLUMN ORGAN ORGAN MEMO;';
-  c.Execute(s);
+
+
+  s := 'C:\Temp\3\SMDOPost.adt';
+  //i := ACE.AdsOpenTable101(c.ConnectionHandle, PAnsiChar(s), @hTbl);
+  i := ACE.AdsOpenTable(c.ConnectionHandle, PAnsiChar(s), 0, ADS_ADT, ADS_ANSI, ADS_COMPATIBLE_LOCKING, ADS_CHECKRIGHTS, ADS_DEFAULT, @hTbl);
+  if (i = AE_SUCCESS) then begin
+    i := AdsGetRecordCount(hTbl, ADS_IGNOREFILTERS, @j);
+  end;
   except
     on E: EADSDatabaseError do begin
       i := E.ACEErrorCode;

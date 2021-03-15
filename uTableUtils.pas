@@ -68,16 +68,13 @@ type
   // описание ADS-таблицы для восстановления
   TTableInf = class(TInterfacedObject)
   private
-    //FSysPfx   : string;
-    FPars    : TFixPars;
+    FPars  : TFixPars;
+    FTblID : Integer;
     procedure FieldsInfo(Q : TAdsQuery); virtual;
     procedure IndexesInfo(SrcTbl: TTableInf; QWork : TAdsQuery); virtual;
   public
-    //IsFree    : Boolean;
     // Имя таблицы в словаре или в папке (Free table)
     TableName : string;
-    // Путь к словарю/папке (free)
-    //Path2Src  : string;
     // Имя таблицы без расширения
     NameNoExt : string;
     // Имя файла копии для исправлений
@@ -123,8 +120,9 @@ type
 
     property Pars : TFixPars read FPars write FPars;
 
-    //function Test1Table(AdsTI : TTableInf; Check: TestMode): Integer; virtual;
-    function Test1Table(AdsTI : TTableInf; Check: TestMode; SysAnsi : string): Integer; virtual;
+    //function Test1Table(SrcTbl : TTableInf; Check: TestMode): Integer; virtual;
+    function Test1Table(SrcTbl: TTableInf; Check: TestMode; SysAnsi: string):
+        Integer; virtual;
 
     // Установка рабочей копии и объекта состояния исправлений
     function SetWorkCopy(P2TMP : string): Integer;
@@ -181,6 +179,7 @@ var
 begin
   inherited Create;
 
+  FTblID := TID;
   Pars := AppPars;
   TableName := TName;
 
@@ -552,7 +551,7 @@ end;
 
 
 // тестирование одной таблицы на ошибки (Dictionary)
-function TTableInf.Test1Table(AdsTI : TTableInf; Check: TestMode; SysAnsi : string): Integer;
+function TTableInf.Test1Table(SrcTbl: TTableInf; Check: TestMode; SysAnsi: string): Integer;
 var
   iFld, ec: Integer;
   TypeName, s: string;
@@ -562,61 +561,61 @@ var
   QWork : TAdsQuery;
 begin
   Result := 0;
-  if (AdsTI.AdsT.Active) then
-    AdsTI.AdsT.Close;
+  if (SrcTbl.AdsT.Active) then
+    SrcTbl.AdsT.Close;
 
   try
-    Conn := AdsTI.AdsT.AdsConnection;
-    QWork := TAdsQuery.Create(AdsTI.AdsT.Owner);
+    Conn := SrcTbl.AdsT.AdsConnection;
+    QWork := TAdsQuery.Create(SrcTbl.AdsT.Owner);
     QWork.AdsConnection := Conn;
     QWork.SQL.Add( Format('SELECT * FROM %sCOLUMNS WHERE PARENT=''%s''' , [SysAnsi, TableName]) );
 
     FieldsInfo(QWork);
     // все уникальные индексы
     QWork.SQL.Text := 'SELECT INDEX_OPTIONS, INDEX_EXPRESSION, PARENT FROM ' + SysAnsi + 'INDEXES WHERE (PARENT = ''' + TableName + ''') AND ((INDEX_OPTIONS & 1) = 1)';
-    IndexesInfo(AdsTI, QWork);
-    AdsTI.RecCount := RecsBySQL(QWork, AdsTI.TableName);
-    AdsTI.ErrInfo.State := TST_UNKNOWN;
+    IndexesInfo(SrcTbl, QWork);
+    SrcTbl.RecCount := RecsBySQL(QWork, SrcTbl.TableName);
+    SrcTbl.ErrInfo.State := TST_UNKNOWN;
 
     // Easy Mode and others
-    AdsTI.AdsT.Open;
-    PositionSomeRecs(AdsTI.AdsT, AdsTI.FieldsInf, Check);
-    AdsTI.AdsT.Close;
+    SrcTbl.AdsT.Open;
+    PositionSomeRecs(SrcTbl.AdsT, SrcTbl.FieldsInf, Check);
+    SrcTbl.AdsT.Close;
 
     if (Check = Medium)
       OR (Check = Slow) then begin
-      s := 'EXECUTE PROCEDURE sp_Reindex(''' + AdsTI.TableName + '.adt'',0)';
+      s := 'EXECUTE PROCEDURE sp_Reindex(''' + SrcTbl.TableName + '.adt'',0)';
       Conn.Execute(s);
 
       if (Check = Slow) then begin
 
-          if (AdsTI.IndCount > 0) then begin
+          if (SrcTbl.IndCount > 0) then begin
         // есть уникальные индексы
-            iFld := Field4Alter(AdsTI);
+            iFld := Field4Alter(SrcTbl);
             if (iFld >= 0) then begin
-              s := AdsTI.FieldsInf[iFld];
-              s := 'ALTER TABLE ' + AdsTI.TableName + ' ALTER COLUMN ' + s + ' ' + s + ' ' + TFieldsInf(AdsTI.FieldsInf.Objects[iFld]).TypeSQL;
+              s := SrcTbl.FieldsInf[iFld];
+              s := 'ALTER TABLE ' + SrcTbl.TableName + ' ALTER COLUMN ' + s + ' ' + s + ' ' + TFieldsInf(SrcTbl.FieldsInf.Objects[iFld]).TypeSQL;
               Conn.Execute(s);
-              s := IncludeTrailingPathDelimiter(Conn.GetConnectionPath) + AdsTI.TableName + '*.BAK';
+              s := IncludeTrailingPathDelimiter(Conn.GetConnectionPath) + SrcTbl.TableName + '*.BAK';
               DeleteFiles(s);
             end;
           end;
 
         // Realy need?
-        AdsTI.AdsT.PackTable;
+        SrcTbl.AdsT.PackTable;
       end;
 
     end;
-    AdsTI.ErrInfo.State  := TST_GOOD;
-    AdsTI.ErrInfo.MsgErr := '';
+    SrcTbl.ErrInfo.State  := TST_GOOD;
+    SrcTbl.ErrInfo.MsgErr := '';
 
   except
     on E: EADSDatabaseError do begin
       Result := E.ACEErrorCode;
-      AdsTI.ErrInfo.ErrClass  := E.ACEErrorCode;
-      AdsTI.ErrInfo.NativeErr := E.SQLErrorCode;
-      AdsTI.ErrInfo.MsgErr    := E.Message;
-      AdsTI.ErrInfo.State     := TST_ERRORS;
+      SrcTbl.ErrInfo.ErrClass  := E.ACEErrorCode;
+      SrcTbl.ErrInfo.NativeErr := E.SQLErrorCode;
+      SrcTbl.ErrInfo.MsgErr    := E.Message;
+      SrcTbl.ErrInfo.State     := TST_ERRORS;
     end;
   end;
 
