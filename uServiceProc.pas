@@ -119,6 +119,12 @@ const
   // Its impossible
   UE_SORRY    = 13000;
 
+  LOG_FNAME = 'AdsFix.log';
+
+  LOG_MIN    = 1;
+  LOG_MEDIUM = 2;
+  LOG_MAX    = 3;
+
   CONNECTIONTYPE_DIRBROWSE = 'Выберите папку...';
   CONNECTIONTYPE_DDBROWSE  = 'Выберите файл словаря...';
   DATA_DICTIONARY_FILTER = 'Advantage Data Dictionaries (*.ADD)|*.ADD|All Files (*.*)|*.*';
@@ -173,6 +179,8 @@ type
     FSrc    : String;
     FPath2Src : String;
     FTmp    : String;
+    FLogFile : string;
+    FLogLevel : Integer;
     //FIsDict : Boolean;
     procedure FWriteSrc(const Value : string);
     procedure FWriteTmp(const Value : string);
@@ -242,11 +250,14 @@ type
 
   TLogFile = class(TSingleton)
     private
+      FPars    : TFixPars;
       FLogName : string;
     protected
       constructor Create; override;
     public
+      procedure SetPars(FP : TFixPars);
       procedure AddMsg(const Value : string);
+
       destructor Destroy; override;
     published
   end;
@@ -290,6 +301,11 @@ begin
   Result := TLogFile.GetInstance;
 end;
 
+procedure TLogFile.SetPars(FP : TFixPars);
+begin
+  FPars := FP;
+end;
+
 procedure TLogFile.AddMsg(const Value : string);
 begin
   MemoWrite(FLogName, Value);
@@ -320,6 +336,8 @@ begin
     TMode      := TestMode(IniFile.ReadInteger(INI_CHECK, 'TestMode', Integer(Simple)));
     DelDupMode := TDelDupMode(Ini.ReadInteger(INI_FIX, 'DelDupMode', Integer(DDUP_EX1)));
     SafeFix    := TSafeFix.Create(Ini);
+    FLogFile   := Ini.ReadString(INI_PATHS, 'LogFile', LOG_FNAME);
+    FLogLevel  := Ini.ReadInteger(INI_PATHS, 'LogLevel', LOG_MEDIUM);
   finally
   end;
 end;
