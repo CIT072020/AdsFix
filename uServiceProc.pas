@@ -262,6 +262,7 @@ type
     published
   end;
 
+function Iif(const Expr : Boolean; const IfTrue, IfFalse : Variant) : Variant;
 function LogText : TLogFile;
 
 function FType2ADS(FT : TFieldType) : Integer ;
@@ -282,6 +283,14 @@ uses
   FileUtil,
   DBFunc,
   FuncPr;
+  
+function Iif(const Expr : Boolean; const IfTrue, IfFalse : Variant) : Variant;
+begin
+  if (Expr = True) then
+    Result := IfTrue
+  else
+    Result := IfFalse;
+end;
 
 constructor TLogFile.Create;
 begin

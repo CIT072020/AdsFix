@@ -54,7 +54,7 @@ type
     function FindDelEmpty(IndInf: TIndexInf; QTmp: TAdsQuery; DelNow: Boolean = True): integer;
 
     //
-    function NewRow4Del(Q: TAdsQuery; Dst : TStringList; var Why: Integer): string;
+    function NewRow4Del(Q: TAdsQuery; Dst : TStringList; var Why: Integer; DelEmpty : Boolean = False): string;
 
     // Поиск ROWID дубликатов ключей среди уникадьных индексов
     function UniqRepeat(iI : Integer) : string;
@@ -270,7 +270,7 @@ end;
 }
 
 // Добавить в список
-function TFixUniq.NewRow4Del(Q: TAdsQuery; Dst : TStringList; var Why: Integer): string;
+function TFixUniq.NewRow4Del(Q: TAdsQuery; Dst : TStringList; var Why: Integer; DelEmpty : Boolean = False): string;
 var
   RowDel : TRow4Del;
 begin
@@ -280,7 +280,11 @@ begin
     RowDel.RowID := Result;
     RowDel.DelRow := True;
     RowDel.Reason := Why;
-    RowDel.GroupID := Q.FieldValues[AL_DKEY];
+    //RowDel.GroupID := Iif(DelEmpty, '', Q.FieldValues[AL_DKEY]);
+    if (DelEmpty) then
+      RowDel.GroupID := ''
+    else
+      RowDel.GroupID := Q.FieldValues[AL_DKEY];
     Dst.AddObject(Result, RowDel);
     Why := Dst.Count - 1;
   end
@@ -323,7 +327,7 @@ begin
     sExec := '';
     for i := 0 to (QTmp.RecordCount - 1) do begin
       iNew := RSN_EMP_KEY;
-      sID := NewRow4Del(QTmp, FBadRows, iNew);
+      sID := NewRow4Del(QTmp, FBadRows, iNew, True);
       if (iNew >= 0) then begin
         nDel := nDel + 1;
         if (nDel > 1) then
