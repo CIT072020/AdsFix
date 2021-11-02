@@ -228,7 +228,7 @@ end;
 function TDictList.TablesListFromDict(QA: TAdsQuery): Integer;
 var
   i: Integer;
-  s: string;
+  FName, s: string;
   TblCapts: TStringList;
 begin
   i := 0;
@@ -237,37 +237,41 @@ begin
   with QA do begin
     First;
     while not Eof do begin
-      i := i + 1;
-      SrcList.Append;
+      FName := FieldByName('NAME').AsString;
+      if (FileExists(Pars.Path2Src + FName + '.adt') = True) then begin
+        i := i + 1;
+        SrcList.Append;
 
-      SrcList.FieldValues['Npp']       := i;
-      SrcList.FieldValues['IsMark']    := False;
-      SrcList.FieldValues['TableName'] := FieldByName('NAME').AsString;
-      try
-        TblCapts := Split('.', FieldByName('COMMENT').AsString);
-        s := TblCapts[TblCapts.Count - 1];
-      except
-        s := '';
-      end;
-      if (Length(s) = 0) then
-        s := '<' + FieldByName('NAME').AsString + '>';
+        SrcList.FieldValues['Npp'] := i;
+        SrcList.FieldValues['IsMark'] := False;
+        SrcList.FieldValues['TableName'] := FName;
+        try
+          TblCapts := Split('.', FieldByName('COMMENT').AsString);
+          s := TblCapts[TblCapts.Count - 1];
+        except
+          s := '';
+        end;
+        if (Length(s) = 0) then
+          s := '<' + FieldByName('NAME').AsString + '>';
 
-      SrcList.FieldValues['TableCaption'] := s;
-      SrcList.FieldValues['TestCode']     := 0;
-      SrcList.FieldValues['ErrNative']    := 0;
-      SrcList.FieldValues['AIncs']        := 0;
-      SrcList.FieldValues['FixCode']      := 0;
-      SrcList.FieldValues['State']        := TST_UNKNOWN;
+        SrcList.FieldValues['TableCaption'] := s;
+        SrcList.FieldValues['TestCode'] := 0;
+        SrcList.FieldValues['ErrNative'] := 0;
+        SrcList.FieldValues['AIncs'] := 0;
+        SrcList.FieldValues['FixCode'] := 0;
+        SrcList.FieldValues['State'] := TST_UNKNOWN;
       //SrcList.FieldValues['TableInf']     := 0;
-      SrcList.FieldValues['TableInf']     := Integer(TDictTable.Create(FieldByName('NAME').AsString, i, SrcConn, Pars));
-      SrcList.FieldValues['FixLog']       := '';
+        SrcList.FieldValues['TableInf'] := Integer(TDictTable.Create(FieldByName('NAME').AsString, i, SrcConn, Pars));
+        SrcList.FieldValues['FixLog'] := '';
 
-      SrcList.Post;
+        SrcList.Post;
+      end;
       Next;
     end;
   end;
   Result := i;
 end;
+
 
 // Построение словарного списка таблиц для восстановления
 function TDictList.FillList4Fix(TableName : string = '') : Integer;
