@@ -459,8 +459,9 @@ begin
           t := v;
           Year := YearOf(t);
           if (Year <= 1) or (Year > 2100) then
-            //raise Exception.Create(EMSG_BAD_DATA);
-            raise EADSDatabaseError.create(nil, UE_BAD_YEAR, '');
+            // !!! Пока не реагирую 04.11.21
+            //raise EADSDatabaseError.create(nil, UE_BAD_YEAR, '');
+            ;
           if (FI.FieldType = ADS_TIMESTAMP) then begin
             Ms := (DateTimeToTimeStamp(t)).Time;
             if (Ms < 0) or (Ms > MSEC_PER_DAY) then

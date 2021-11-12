@@ -172,13 +172,13 @@ begin
   Result := True;
   try
     if (SrcTbl.FieldsAI.Count > 0) then begin
-      s := 'ALTER TABLE ' + SrcTbl.TableName;
+      s := 'ALTER TABLE "' + SrcTbl.TableName + '"';
       for i := 0 to (SrcTbl.FieldsAI.Count - 1) do begin
         s := s + ' ALTER COLUMN ' + SrcTbl.FieldsAI[i] + ' ' + SrcTbl.FieldsAI[i] + AIType;
       end;
       Conn.Execute(s);
       if (Length(DelExt) > 0) then
-        DeleteFiles(IncludeTrailingPathDelimiter(Conn.GetConnectionPath) + SrcTbl.TableName + DelExt);
+        DeleteFiles(IncludeTrailingPathDelimiter(Conn.GetConnectionPath) + SrcTbl.NameNoExt + DelExt);
     end;
   except
     Result := False;
@@ -188,7 +188,8 @@ end;
 // Вставка в обнуляемый оригинал исправленных записей
 function TFixBase.ChangeOriginal(P2Src, P2Tmp: string; SrcTbl: TTableInf): Boolean;
 var
-  ErrAdm, ecb: Boolean;
+  ChgAI,
+  ErrCopyADM, ErrCopyADT: Boolean;
   i: Integer;
   FileSrc, FileDst, TmpName, ss, sd: string;
   Span: TSpan;
@@ -220,8 +221,8 @@ begin
     Conn := SrcTbl.AdsT.AdsConnection;
     Conn.Disconnect;
 
-    ecb := True;
-    ErrAdm := True;
+    ErrCopyADT := True;
+    ErrCopyADM := True;
 
     FileSrc := P2Src + SrcTbl.NameNoExt;
     FileDst := P2Tmp + SrcTbl.NameNoExt + ExtADT;
@@ -229,51 +230,28 @@ begin
     if (SrcTbl.NeedBackUp = True) then begin
     // Перед вставкой сделать копию
       TmpName := P2Src + ORGPFX + SrcTbl.NameNoExt;
-      ecb := DeleteFiles(TmpName + '.*');
+      ErrCopyADT := DeleteFiles(TmpName + '.*');
 
       if FileExists(FileSrc + ExtADI) then
         if (SrcTbl.Pars.IsDict = False) then
-          ecb := BackUpOne(ExtADI)
+          ErrCopyADT := BackUpOne(ExtADI)
         else
-          ecb := DeleteFiles(FileSrc + ExtADI);
-{
-      ss := FileSrc + ExtADT;
-      sd := TmpName + ExtADT;
-      if (SrcTbl.IsFree) then
-        ecb := (CopyOneFile(ss, sd) = 0)
-      else
-        ecb := RenameFile(ss, sd);
-      if (ecb = True) then
-        SrcTbl.BackUps.Add(sd);
-}
-       ecb := ecb and BackUpOne(ExtADT);
-      if FileExists(FileSrc + ExtADM) then begin
-{
-        ss := FileSrc + ExtADM;
-        sd := TmpName + ExtADM;
-        if (SrcTbl.IsFree) then
-          ErrAdm := (CopyOneFile(ss, sd) = 0)
-        else
-          ErrAdm := RenameFile(ss, sd);
-        if (ErrAdm = True) then
-          SrcTbl.BackUps.Add(sd);
-}
-        ErrAdm := BackUpOne(ExtADM);
-      end;
+          ErrCopyADT := DeleteFiles(FileSrc + ExtADI);
+      ErrCopyADT := BackUpOne(ExtADT);
+      if FileExists(FileSrc + ExtADM) then
+        ErrCopyADM := BackUpOne(ExtADM);
     end;
 
     Conn.IsConnected := True;
     // Очистить таблицу
     if (Conn.IsDictionaryConn = False) then begin
-      //Conn.Execute(Format('DELETE FROM "%s"', [SrcTbl.TableName]));
-      //Conn.Execute(Format('EXECUTE sp_ZapTable(''%s''', [SrcTbl.TableName]));
       ss := Format('EXECUTE PROCEDURE sp_ZapTable(''%s'')', [SrcTbl.TableName]);
       Conn.Execute(ss);
     end
     else begin
     // Удалить таблицу + Memo + index
-      ecb := DeleteFiles(FileSrc + '.ad?');
-      if (ecb = True) and (ErrAdm = True) then begin
+      ErrCopyADT := DeleteFiles(FileSrc + '.ad?');
+      if (ErrCopyADT = True) and (ErrCopyADM = True) then begin
   //--- Auto-create empty table
         SrcTbl.AdsT.Active := True;
         SrcTbl.AdsT.Active := False;
@@ -282,10 +260,13 @@ begin
     end;
       try
         // врЕменная замена AUTOINC на INTEGER
-        if (ChangeAI(SrcTbl, ' INTEGER', Conn) = True) then begin
+        //if (ChangeAI(SrcTbl, ' INTEGER', Conn) = True) then begin
+        ChgAI := ChangeAI(SrcTbl, ' INTEGER', Conn);
+        ChgAI := True;
+        if (ChgAI = True) then begin
           SrcTbl.ErrInfo.TotalIns := 0;
           if (SrcTbl.GoodSpans.Count <= 0) then begin
-        // Загрузка оптом
+          // Загрузка оптом
             //ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT * FROM "' + FileDst + '" SRC';
             ss := Format('INSERT INTO "%s" SELECT * FROM "%s" SRC', [SrcTbl.TableName, FileDst]);
             if (Length(SrcTbl.DmgdRIDs) > 0) then
@@ -293,7 +274,7 @@ begin
             SrcTbl.ErrInfo.TotalIns := Conn.Execute(ss);
           end
           else begin
-        // Загрузка интервалами хороших записей
+          // Загрузка интервалами хороших записей
             for i := 0 to SrcTbl.GoodSpans.Count - 1 do begin
               Span := SrcTbl.GoodSpans[i];
               //ss := 'INSERT INTO ' + SrcTbl.TableName + ' SELECT TOP ' + IntToStr(Span.InTOP) + ' START AT ' + IntToStr(Span.InSTART) + ' * FROM "' + FileDst + '" SRC';
@@ -301,8 +282,8 @@ begin
               SrcTbl.ErrInfo.TotalIns := SrcTbl.ErrInfo.TotalIns + Conn.Execute(ss);
             end;
           end;
-        // восстановление AUTOINC на INTEGER
-          ChangeAI(SrcTbl, ' AUTOINC', Conn, '.ad?.bak');
+          // восстановление AUTOINC на INTEGER
+          ChangeAI(SrcTbl, ' AUTOINC', Conn, '.ad?.BAK');
         end;
         SrcTbl.ErrInfo.State := INS_GOOD;
         SrcTbl.ErrInfo.InsErr := 0;
