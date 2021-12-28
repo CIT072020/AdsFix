@@ -78,7 +78,7 @@ type
     function FillList4Fix(TableName : string = '') : Integer; virtual; abstract;
 
     // Тестирование всех или только отмеченных
-    procedure TestSelected(ModeAll : Boolean; TMode : TestMode);  virtual;
+    procedure TestSelected(TMode : TestMode; ModeAll : Boolean = True);  virtual;
 
     constructor Create(APars : TFixPars; Cnct : TAdsConnection = nil);
     destructor Destroy; override;
@@ -183,7 +183,22 @@ begin
 end;
 
 destructor TAdsList.Destroy;
+var
+  pTInf: Integer;
+  SrcTbl: TTableInf;
 begin
+  with SrcList do begin
+    First;
+    while not Eof do begin
+      pTInf := FieldByName('TableInf').AsInteger;
+      if (pTInf <> 0) then begin
+        SrcTbl := TTableInf(Ptr(pTInf));
+        FreeAndNil(SrcTbl);
+      end;
+      Next;
+    end;
+  end;
+  SrcList.EmptyTable;
   inherited Destroy;
 end;
 
@@ -255,14 +270,13 @@ begin
           s := '<' + FieldByName('NAME').AsString + '>';
 
         SrcList.FieldValues['TableCaption'] := s;
-        SrcList.FieldValues['TestCode'] := 0;
-        SrcList.FieldValues['ErrNative'] := 0;
-        SrcList.FieldValues['AIncs'] := 0;
-        SrcList.FieldValues['FixCode'] := 0;
-        SrcList.FieldValues['State'] := TST_UNKNOWN;
-      //SrcList.FieldValues['TableInf']     := 0;
-        SrcList.FieldValues['TableInf'] := Integer(TDictTable.Create(FieldByName('NAME').AsString, i, SrcConn, Pars));
-        SrcList.FieldValues['FixLog'] := '';
+        SrcList.FieldValues['TestCode']     := 0;
+        SrcList.FieldValues['ErrNative']    := 0;
+        SrcList.FieldValues['AIncs']        := 0;
+        SrcList.FieldValues['FixCode']      := 0;
+        SrcList.FieldValues['State']        := TST_UNKNOWN;
+        SrcList.FieldValues['TableInf']     := Integer(TDictTable.Create(FieldByName('NAME').AsString, i, SrcConn, Pars));
+        SrcList.FieldValues['FixLog']       := '';
 
         SrcList.Post;
       end;
@@ -323,12 +337,13 @@ end;
 
 
 // Тестирование всех или только отмеченных
-procedure TAdsList.TestSelected(ModeAll : Boolean; TMode : TestMode);
+procedure TAdsList.TestSelected(TMode : TestMode; ModeAll : Boolean = True);
 var
   StateByTest,
   ErrCode, i: Integer;
   SrcTbl : TTableInf;
 begin
+  if (Filled = True) then begin
     with SrcList do begin
       First;
       i := 0;
@@ -360,8 +375,9 @@ begin
       end;
       First;
     end;
-    Tested := i;
-    SrcConn.IsConnected := False;
+  end;
+  Tested := i;
+  SrcConn.IsConnected := False;
 end;
 
 // Подключение к папке с Free tables

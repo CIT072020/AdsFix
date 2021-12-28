@@ -65,6 +65,8 @@ type
     // Перебор дубликатов, выбор и формирование списка для удаления
     function LeaveOnlyAllowed(Q: TAdsQuery; Q1F: TAdsQuery; DelNow : Boolean): integer;
     function Plan4DelByRowIds : Integer;
+    // Исправление ошибок 7200, 7207
+    function Fix7207 : Integer;
   protected
   public
     //Rows4Del : TStringList;
@@ -81,14 +83,11 @@ type
     // Дубликаты в free-таблице по GROUP BY
     property QDups: TAdsQuery read FQDups write FQDups;
 
-    // Список
-    //property RowIDs4Del : string read FIDs4Del write FIDs4Del;
+    constructor Create(Table2Fix: TTableInf; Pars: TFixPars);
+    destructor Destroy; override;
 
     // Исправление ошибок 7200, 7207
-    function Fix7207 : Integer;
-
-    constructor Create(TI : TTableInf; Pars : TFixPars);
-    destructor Destroy; override;
+    class function FixDupRec(Table2Fix: TTableInf; Pars: TFixPars): integer;
   published
   end;
 
@@ -113,26 +112,39 @@ uses
   Math,
   uIFixDmgd;
 
-
-constructor TFixUniq.Create(TI : TTableInf; Pars : TFixPars);
+class function TFixUniq.FixDupRec(Table2Fix: TTableInf; Pars: TFixPars): integer;
+var
+  FixDupU: TFixUniq;
 begin
-  SrcTbl  := TI;
+  Result := 0;
+  FixDupU := TFixUniq.Create(Table2Fix, Pars);
+  try
+    Table2Fix.RowsFixed := FixDupU.Fix7207;
+    Result := FIX_GOOD;
+  finally
+    FreeAndNil(FixDupU);
+  end;
+end;
+
+constructor TFixUniq.Create(Table2Fix: TTableInf; Pars: TFixPars);
+begin
+  SrcTbl  := Table2Fix;
   FixPars := Pars;
   TmpConn := dtmdlADS.cnnTmp;
 
   QDups := TAdsQuery.Create(SrcTbl.AdsT.Owner);
   QDups.AdsConnection := TmpConn;
 
-  //TI.ErrInfo.Plan2Del := TAdsQuery.Create(SrcTbl.AdsT.Owner);
-  //TI.ErrInfo.Plan2Del.AdsConnection := Cn;
+  //Table2Fix.ErrInfo.Plan2Del := TAdsQuery.Create(SrcTbl.AdsT.Owner);
+  //Table2Fix.ErrInfo.Plan2Del.AdsConnection := Cn;
 
-  //TI.ErrInfo.PlanFix := PlanTable;
-  //TI.ErrInfo.PlanFix.AdsConnection := Cn;
+  //Table2Fix.ErrInfo.PlanFix := PlanTable;
+  //Table2Fix.ErrInfo.PlanFix.AdsConnection := Cn;
   PlanFixQ := dtmdlADS.qDst;
 
   FBadRows := TStringList.Create;
   FBadRows.CaseSensitive := True;
-  //FBadRows.Sorted := True;
+  FBadRows.Sorted := False;
 end;
 
 destructor TFixUniq.Destroy;
@@ -179,7 +191,7 @@ end;
 
 
 // Построить SQL-запрос для получения редактируемого DataSet
-function MakeEdiAbleCursor(const SQLMain1, SQLMain2 : string; SortBy : string = ''; TmpName : string = TMP_PLAN) : string;
+function MakeEditAbleCursor(const SQLMain1, SQLMain2 : string; SortBy : string = ''; TmpName : string = TMP_PLAN) : string;
 begin
   Result := Format('TRY DROP TABLE %s;CATCH ALL END TRY; %s INTO %s %s;',
     [TmpName, SQLMain1, TmpName, SQLMain2]);
@@ -195,7 +207,7 @@ var
   j,
   r, i: integer;
   sFieldList,
-  sSQL,
+  //sSQL,
   sIDs,
   sEnd,
   sBeg: string;
@@ -217,7 +229,7 @@ begin
     Q.Close;
     Q.AdsCloseSQLStatement;
     Q.SQL.Clear;
-    Q.SQL.Text := MakeEdiAbleCursor(sBeg, sEnd, '', TMP_PLAN);
+    Q.SQL.Text := MakeEditAbleCursor(sBeg, sEnd, '', TMP_PLAN);
     Q.RequestLive := True;
     MemoWrite('z222', Q.SQL.Text);
     Q.Active := True;
@@ -359,7 +371,7 @@ var
   CommasList : string;
   IndInf : TIndexInf;
 begin
-  IndInf := SrcTbl.IndexInf.Items[iI];
+  IndInf := TIndexInf(SrcTbl.IndexInf.Items[iI]);
   CommasList := SList2StrCommas(IndInf.Fields, '', '');
   Result := Format(
     'SELECT %s.ROWID, ''%d'' + %s.ROWID AS %s%s %s',     [AL_SRC, iI, AL_DUP, AL_DKEY, AL_DUPCNTF, SList2StrCommas(IndInf.Fields, AL_SRC + '.', '')]);
@@ -372,7 +384,7 @@ begin
 end;
 
 
-// вес одного заполненного поля
+// вес (% заполнения) одного непустого поля
 function FieldWeight(QF: TAdsQuery; FieldName: string; FieldType: integer): integer;
 begin
     // BIN data (default)
@@ -552,7 +564,7 @@ begin
         //sExec := SQL_7207_SearchEmpty(SrcTbl.IndexInf.Items[i]);
         //FDelEmps := FDelEmps + TmpConn.Execute(sExec);
 
-        FDelEmps := FDelEmps + FindDelEmpty(SrcTbl.IndexInf.Items[i], Q, DelNow);
+        FDelEmps := FDelEmps + FindDelEmpty(TIndexInf(SrcTbl.IndexInf.Items[i]), Q, DelNow);
 
         // поиск совпадающих ключей
         QDups.SQL.Clear;
@@ -581,112 +593,6 @@ begin
   if (Result > 0) then
     Plan4DelByRowIds;
 end;
-
-// вызов метода для кода ошибки
-{
-function TblErrorController(SrcTbl: TTableInf): Integer;
-var
-  FixState : Integer;
-  FixDupU  : TFixUniq;
-begin
-  try
-    //if (dtmdlADS.cnABTmp.IsConnected) then
-    dtmdlADS.cnnTmp.IsConnected := False;
-
-    dtmdlADS.cnnTmp.ConnectPath := AppPars.Path2Tmp;
-    dtmdlADS.cnnTmp.IsConnected := True;
-
-    //if (dtmdlADS.tblTmp.Active = True) then
-    dtmdlADS.tblTmp.Close;
-    dtmdlADS.tblTmp.AdsConnection := dtmdlADS.cnnTmp;
-
-    FixState := FIX_GOOD;
-    SrcTbl.RowsFixed := 0;
-
-    case SrcTbl.ErrInfo.ErrClass of
-      7008, 7207:
-        begin
-            FixDupU := TFixUniq.Create(SrcTbl, AppPars);
-            SrcTbl.RowsFixed := FixDupU.Fix7207;
-        end;
-      7200:
-        begin
-          if (SrcTbl.ErrInfo.NativeErr = 7123) then begin
-          // неизвестный тип поля
-            PutError(EMSG_SORRY);
-            FixState := FIX_NOTHG;
-          end
-          else begin
-            FixDupU := TFixUniq.Create(SrcTbl, AppPars);
-            SrcTbl.RowsFixed := FixDupU.Fix7207;
-          end;
-        end;
-        7016,
-      UE_BAD_DATA:
-        begin
-          SrcTbl.RowsFixed := Fix8901(SrcTbl, dtmdlADS.tblTmp);
-        end;
-    end;
-
-    SrcTbl.ErrInfo.State := FixState;
-    if (SrcTbl.RowsFixed > 0) then
-      SrcTbl.ErrInfo.FixErr := 0
-    else
-      SrcTbl.ErrInfo.FixErr := FIX_NOTHG;
-
-  except
-    SrcTbl.ErrInfo.State  := FIX_ERRORS;
-    SrcTbl.ErrInfo.FixErr := UE_BAD_FIX;
-  end;
-  Result := SrcTbl.RowsFixed;
-end;
-}
-
-// Копия оригинала и освобождение таблицы
-{
-function PrepTable(P2Src, P2TMP: string; SrcTbl: TTableInf): Integer;
-var
-  s, FileSrc, FileSrcNoExt, FileDst: string;
-begin
-  Result   := UE_BAD_PREP;
-
-  // Группа файлов в источнике
-  FileSrc := P2Src + SrcTbl.NameNoExt;
-
-  try
-    SrcTbl.FileTmp := P2TMP + SrcTbl.NameNoExt + ExtADT;
-
-    s := FileSrc + ExtADT;
-    if (CopyOneFile(s, P2TMP) <> 0) then
-      raise Exception.Create('Ошибка копирования ' + s);
-
-    s := FileSrc + ExtADM;
-    if FileExists(s) then begin
-      if (CopyOneFile(s, P2TMP) <> 0) then
-        raise Exception.Create('Ошибка копирования ' + s);
-    end;
-
-      if AdsDDFreeTable(PAnsiChar(SrcTbl.FileTmp), nil) = AE_FREETABLEFAILED then
-        if (SrcTbl.IsFree = False) then
-        // Словарная таблица обязательно освобождается
-          raise EADSDatabaseError.Create(SrcTbl.AdsT, UE_BAD_PREP, 'Ошибка освобождения таблицы');
-
-    SrcTbl.ErrInfo.PrepErr := 0;
-    Result := 0;
-  except
-    SrcTbl.ErrInfo.State := FIX_ERRORS;
-    SrcTbl.ErrInfo.PrepErr := UE_BAD_PREP;
-  end;
-end;
-}
-
-
-
-
-
-
-
-
 
 
 // Восстановление сохраненных оригиналов с ошибками (BAckups) для одной таблицы
@@ -763,336 +669,5 @@ begin
 end;
 
 
-// Полный цикл для одной таблицы
-{
-function FullFixOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer; FixPars: TAppPars; Q: TAdsQuery): TTableInf;
-var
-  RowsFixed,
-  ec, i: Integer;
-  SrcTbl: TTableInf;
-begin
-
-  if (Ptr2TableInf = 0) then begin
-    SrcTbl := TTableInf.Create(TName, TID, Q.AdsConnection, FixPars);
-    ec := SrcTbl.Test1Table(SrcTbl, FixPars.TMode, FixPars.SysAdsPfx);
-  end
-  else begin
-    SrcTbl := TTableInf(Ptr(Ptr2TableInf));
-    ec := SrcTbl.ErrInfo.ErrClass;
-  end;
-  Result := SrcTbl;
-
-  if (ec > 0) then begin
-    // Ошибки тестирования были
-    ec := SrcTbl.SetWorkCopy(AppPars.Path2Tmp);
-    if (ec = 0) then begin
-      // Исправление копии
-      RowsFixed := TblErrorController(SrcTbl);
-      if (SrcTbl.ErrInfo.FixErr = 0) then begin
-        // Исправление оригинала
-        if (ChangeOriginal(FixBase.FixList.Path2Src, AppPars.Path2Tmp, SrcTbl) = True) then
-          SrcTbl.ErrInfo.State := INS_GOOD
-        else
-          SrcTbl.ErrInfo.State := INS_ERRORS;
-      end;
-    end;
-  end;
-end;
-}
-
-
-// Full Proceed для всех/отмеченных
-{
-procedure FullFixAllMarked(FixAll : Boolean = True);
-var
-  ec, i: Integer;
-  TName: string;
-  SrcTbl: TTableInf;
-begin
-  if (dtmdlADS.tblAds.Active) then
-    dtmdlADS.tblAds.Close;
-
-  SortByState(False);
-  with dtmdlADS.mtSrc do begin
-    First;
-    i := 0;
-    while not Eof do begin
-      i := i + 1;
-      if (dtmdlADS.FSrcMark.AsBoolean = True)
-      or (FixAll = True) then begin
-
-        TName := FieldByName('TableName').Value;
-
-        Edit;
-        SrcTbl := FullFixOneTable(TName, FieldByName('Npp').Value, dtmdlADS.FSrcFixInf.AsInteger, AppPars, dtmdlADS.qAny);
-        dtmdlADS.FSrcFixInf.AsInteger := Integer(SrcTbl);
-
-        dtmdlADS.FSrcState.AsInteger  := SrcTbl.ErrInfo.State;
-        dtmdlADS.FSrcTestCode.AsInteger := SrcTbl.ErrInfo.ErrClass;
-        dtmdlADS.FSrcErrNative.AsInteger := SrcTbl.ErrInfo.NativeErr;
-
-        if (SrcTbl.ErrInfo.PrepErr > 0) then
-          dtmdlADS.FSrcFixCode.AsInteger := SrcTbl.ErrInfo.PrepErr
-        else
-          dtmdlADS.FSrcFixCode.AsInteger := SrcTbl.ErrInfo.FixErr;
-
-        dtmdlADS.FSrcMark.AsBoolean := False;
-        Post;
-
-      end;
-      Next;
-    end;
-
-  end;
-  SortByState(True);
-
-end;
-}
-
-
-
-//!!!===!!! Not used
-{
-
-
-// Реккурсивный подбор запроса на хорошие записи
-function FloatQ(iStart: Integer; TName: string; Q: TAdsQuery; iMax: Integer): Integer;
-var
-  Err  : Boolean;
-  iRes : Integer;
-begin
-  // Default - EoF
-  Result := -1;
-  Err := False;
-  Q.SQL.Text := Format('SELECT TOP %d START AT %d * FROM %s', [iMax, iStart, TName]);
-  try
-    Q.Active := True;
-    iRes := Q.RecordCount;
-  except
-    iRes := Max(1, iMax - 1);
-    Err  := True;
-  end;
-
-  if (iRes > 0) then begin
-    if (iRes <> iMax) or (Err = True) then begin
-        // Уменьшаем запрос
-      if (iMax > 1)then begin
-        Q.Close;
-        Q.AdsCloseSQLStatement;
-        Result := FloatQ(iStart, TName, Q, iMax div 2);
-      end
-      else
-        Result := -100;
-
-    end
-    else begin
-      Q.First;
-      Result := iRes;
-    end;
-  end
-
-end;
-
-// Очередной интервал хороших записей или EoF
-function EofQ(iStart: Integer; TName: string; Q: TAdsQuery; var iMax: Integer): Boolean;
-const
-  MAX_RECS: Integer = 50000;
-var
-  iTry: Integer;
-begin
-  Result := False;
-  if ((iStart + MAX_RECS - 1) > iMax) then
-    // Выход за границы таблицы
-    iTry := iMax - iStart + 1
-  else
-    iTry := MAX_RECS;
-  iMax := FloatQ(iStart, TName, Q, iTry);
-  if (iMax = -1) then
-    Result := True;
-end;
-
-
-// Коррктировка таблицы с поврежденными данными (Scan by SQL-Select)
-function Fix8901SQLScan(SrcTblInf: TTableInf; TT: TAdsTable): Integer;
-//function Fix8901(SrcTblInf: TTableInf; TT: TAdsTable): Integer;
-var
-  NoRead: Boolean;
-  iBeg, ij, jMax, BadField, Step, j, i: Integer;
-  Q: TAdsQuery;
-  BadFInRec: TBadRec;
-  BadRecs: TList;
-begin
-    Result := 0;
-
-    Q := TAdsQuery.Create(TT.AdsConnection.Owner);
-    Q.AdsConnection := TT.AdsConnection;
-    Q.Active := False;
-
-    BadRecs := TList.Create;
-    NoRead := False;
-    iBeg := 1;
-    jMax := SrcTblInf.RecCount;
-
-    while not EofQ(iBeg, SrcTblInf.TableName, Q, jMax) do begin
-      if (jMax = -100) then begin
-        // Текущая запись не читается, в ошибочные
-        jMax := 1;
-        NoRead := True;
-      end;
-
-      for j := 1 to jMax do begin
-        ij := iBeg + j - 1;
-
-        try
-          if (NoRead = True) then
-            BadField := 1
-          else
-            BadField := Read1RecEx(Q.Fields, SrcTblInf.FieldsInf);
-          if (BadField >= 0) then begin
-            BadFInRec := TBadRec.Create;
-            BadFInRec.RecNo := ij;
-            BadFInRec.BadFieldI := BadField;
-            BadRecs.Add(BadFInRec);
-          end
-          else
-            SrcTblInf.LastGood := ij;
-        except
-
-        end;
-        if (not NoRead) then
-          Q.Next;
-
-      end;
-
-      Q.Close;
-      Q.AdsCloseSQLStatement;
-
-      iBeg   := iBeg + jMax;
-      NoRead := False;
-      jMax   := SrcTblInf.RecCount;
-
-    end;
-
-    BuildSpans(BadRecs, SrcTblInf);
-    Result := BadRecs.Count;
-end;
-}
-
-
-{
-function SQL_7207_SearchEmpty(TblInf : TTableInf; iI : Integer; nMode : Integer) : string;
-var
-  i, j : Integer;
-  s : String;
-  IndInf : TIndexInf;
-
-  FI : TFieldsInf;
-begin
-  Result := 'DELETE FROM ' + TblInf.TableName + ' WHERE ' + TblInf.TableName + '.ROWID IN ';
-  s := '(SELECT ROWID FROM ' + TblInf.TableName + ' WHERE ';
-  IndInf := TblInf.IndexInf.Items[iI];
-
-  for i := 0 to IndInf.Fields.Count - 1 do begin
-    if (i > 0) then
-      s := s + ' OR ';
-    j := IndInf.IndFieldsAdr[i];
-    //s := s + EmptyFCond(IndInf.Fields.Strings[i], TFieldsInf(TblInf.FieldsInf[j]).FieldType);
-
-    FI := TblInf.FieldsInf[j];
-    s := s + EmptyFCond(IndInf.Fields.Strings[i], FI.FieldType);
-
-  end;
-  Result := Result + s + ')';
-end;
-
-
-function Fix7207(TblInf: TTableInf; QDups: TAdsQuery): Integer;
-var
-  RowFix,
-  j, i: Integer;
-  sExec: string;
-begin
-    RowFix := 0;
-    with QDups do begin
-      if Active then
-        Close;
-
-      TblInf.DupRows := TList.Create;
-
-      for i := 0 to TblInf.IndCount - 1 do begin
-          // для всех уникальных индексов таблицы
-
-          // поиск и удаление пустых [под]ключей
-        sExec := SQL_7207_SearchEmpty(TblInf, i, 1);
-        j := AdsConnection.Execute(sExec);
-        RowFix := RowFix + j;
-
-          // поиск совпадающих ключей
-        SQL.Clear;
-        sExec := UniqRepeat(TblInf, i);
-        SQL.Add(sExec);
-        VerifySQL;
-        //ExecSQL;
-        Active := True;
-        if (RecordCount > 0) then begin
-
-          // для всех групп с одинаковым значением индекса
-          // оставить одну запись из группы
-          LeaveOnlyAllowed(QDups, TblInf, i, dtmdlADS.qDst);
-
-          DelDups4Idx(TblInf);
-        end;
-
-
-          //ExecSQL;
-          //Result := Result + RowsAffected;
-      end;
-
-      // поиск некорректных AUTOINC
-      DelOtherDups(TblInf);
-
-    end;
-
-end;
-}
-
-{
-function UniqRepeat(AdsTbl : TTableInf; iI : Integer) : string;
-var
-  IndInf : TIndexInf;
-begin
-  IndInf := AdsTbl.IndexInf.Items[iI];
-  Result := 'SELECT ' + AL_SRC + '.ROWID, ''' + IntToStr(iI) + '''+' +
-    AL_DUP + '.ROWID AS ' + AL_DKEY + AL_DUPCNTF + IndInf.AlsCommaSet +
-    ' FROM ' + AdsTbl.TableName + ' ' + AL_SRC +
-    ' INNER JOIN (SELECT COUNT(*) AS ' + AL_DUPCNT + ',' + IndInf.CommaSet +
-    ' FROM ' + AdsTbl.TableName + ' GROUP BY ' + IndInf.CommaSet +
-    ' HAVING (COUNT(*) > 1) ) ' + AL_DUP +
-    ' ON ' + IndInf.EquSet;
-  Result := Result + ' ORDER BY ' + AL_DKEY;
-end;
-}
-
-// SQL-команда удаления записей с пустыми [под]ключами уникального индекса
-{
-function TFixUniq.SQL_7207_SearchEmpty(IndInf : TIndexInf) : string;
-var
-  i, j : Integer;
-  s : String;
-begin
-  s := '';
-
-  for i := 0 to IndInf.Fields.Count - 1 do begin
-    if (i > 0) then
-      s := s + ' OR ';
-    j := IndInf.IndFieldsAdr[i];
-    s := s + EmptyFCond(IndInf.Fields.Strings[i], TFieldsInf(SrcTbl.FieldsInf[j]).FieldType);
-  end;
-  Result := Format(
-    'DELETE FROM %s WHERE %s.ROWID IN (SELECT ROWID FROM %s WHERE %s)'
-    ,[SrcTbl.TableName, SrcTbl.TableName, SrcTbl.TableName, s]
-    );
-end;
-}
 
 end.

@@ -111,12 +111,12 @@ begin
   Ini := TSasaIniFile.Create(ChangeFileExt(Application.ExeName, '.INI'));
   AppFixPars := TFixPars.Create(Ini);
 
-  cbbPath2Src.Text := AppFixPars.Src;
+  cbbPath2Src.Text   := AppFixPars.Src;
   btnTblList.Enabled := (Length(cbbPath2Src.Text) > 0);
-  edtPath2Tmp.Text := AppFixPars.Tmp;
+  edtPath2Tmp.Text   := AppFixPars.Tmp;
 
   chkAutoTest.Checked  := AppFixPars.AutoTest;
-  rgTestMode.ItemIndex := Integer(AppFixPars.TMode);
+  rgTestMode.ItemIndex := Integer(AppFixPars.TableTestMode);
 
   chkUseWCopy.Checked := AppFixPars.SafeFix.UseCopy4Work;
   chkRewriteCopy.Checked := AppFixPars.SafeFix.ReWriteWork;
@@ -125,7 +125,7 @@ begin
   rgDelDupMode.ItemIndex := Integer(AppFixPars.DelDupMode);
 
   AppFixPars.ShowForm := Self;
-  FixBaseUI := TFixBaseUI.Create(AppFixPars);
+  FixBaseUI := TFixADSTablesUI.Create(AppFixPars);
 end;
 
 procedure TFormMain.FormDestroy(Sender: TObject);
@@ -139,7 +139,7 @@ begin
     Ini.WriteSTring(INI_PATHS, 'TMPPath', AppFixPars.Tmp);
 
     Ini.WriteBool(INI_CHECK, 'AutoTest', AppFixPars.AutoTest);
-    Ini.WriteInteger(INI_CHECK, 'TestMode', Ord(AppFixPars.TMode));
+    Ini.WriteInteger(INI_CHECK, 'TestMode', Ord(AppFixPars.TableTestMode));
 
     Ini.WriteBool(INI_SAFETY, 'COPY4FIX', AppFixPars.SafeFix.UseCopy4Work);
     Ini.WriteBool(INI_SAFETY, 'RWRCOPY', AppFixPars.SafeFix.ReWriteWork);
@@ -234,23 +234,19 @@ end;
 -------------------------------------------------------------------------------}
 procedure TFormMain.btnTblListClick(Sender: TObject);
 begin
-  if (FixBaseUI.FixPars.IsDict) then
-    FixBaseUI.FixList := TDictList.Create(FixBaseUI.FixPars)
-  else
-    FixBaseUI.FixList := TFreeList.Create(FixBaseUI.FixPars);
-  // when progress bar be ready - actually
-  //FixBase.FixList.SrcList.DisableControls;
-
-  if (FixBaseUI.FixList.FillList4Fix = UE_OK) then begin
+  TButtonControl(Sender).Enabled := False;
+  try
+  if (FixBaseUI.NewAdsList = True) then begin
     if (chkAutoTest.Checked = True) then
-      FixBaseUI.FixList.TestSelected(True, FixBaseUI.FixPars.TMode);
-  end
-  else begin
+      FixBaseUI.FixList.TestSelected(AppFixPars.TableTestMode);
+  end else begin
     // No Ads tables OR ???
-        ShowMessage('Неправильное имя пользователя или пароль');
+    ShowMessage('Неправильное имя пользователя или пароль');
   end;
   FixBaseUI.FixList.SrcList.EnableControls;
-
+  finally
+    TButtonControl(Sender).Enabled := True;
+  end;
 end;
 
 // Протестировать выбранные
@@ -258,12 +254,15 @@ procedure TFormMain.btnTestClick(Sender: TObject);
 begin
   TButtonControl(Sender).Enabled := False;
   try
-    FixBaseUI.FixPars := AppFixPars;
-    FixBaseUI.FixList.TestSelected(False, AppFixPars.TMode);
+    if (Assigned(FixBaseUI.FixList)) then begin
+      FixBaseUI.FixPars := AppFixPars;
+      FixBaseUI.FixList.TestSelected(AppFixPars.TableTestMode, False);
+    end;
   finally
     TButtonControl(Sender).Enabled := True;
   end;
 end;
+
 
 // Исправить помеченные
 procedure TFormMain.btnProcMarkClick(Sender: TObject);
@@ -273,10 +272,11 @@ begin
   TButtonControl(Sender).Enabled := False;
   try
     s := AppFixPars.IsCorrectTmp(AppFixPars.Tmp);
-    if (Length(s) > 0) then begin
+    if (Length(s) > 0) and (Assigned(FixBaseUI.FixList)) then begin
       AppFixPars.Tmp := s;
       edtPath2Tmp.Text := s;
       dtmdlADS.cnnTmp.IsConnected := False;
+      FixBaseUI.FixPars := AppFixPars;
       FixBaseUI.FixAllMarked;
       dtmdlADS.cnnSrcAds.IsConnected := False;
     end;
@@ -320,7 +320,7 @@ end;
 procedure TFormMain.rgTestModeClick(Sender: TObject);
 begin
   if (Assigned(AppFixPars) and (rgTestMode.ItemIndex >= 0)) then begin
-    AppFixPars.TMode := TestMode(rgTestMode.ItemIndex);
+    AppFixPars.TableTestMode := TestMode(rgTestMode.ItemIndex);
   end;
 end;
 
@@ -352,7 +352,8 @@ begin
   TButtonControl(Sender).Enabled := False;
   try
     FixBaseUI.FixPars := AppFixPars;
-    FixBaseUI.RecoverAll;
+    if (FixBaseUI.RecoverAll <> 0) then
+      PutError('Таблицы не найдены!');
   finally
     TButtonControl(Sender).Enabled := True;
   end;

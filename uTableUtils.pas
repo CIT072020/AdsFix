@@ -4,7 +4,9 @@ interface
 
 uses
   SysUtils,
-  Classes, DB,
+  Classes,
+  Contnrs,
+  DB,
   AdsData, Ace, AdsTable, AdsCnnct,
   uServiceProc;
 
@@ -16,14 +18,15 @@ type
     TypeSQL   : string;
   end;
 
-  // описание одного индекса, интересуют только уникальные
+  // описание одного индекса, рассматриваютс€ только уникальные
   TIndexInf = class
-    Options: Integer;
-    //Expr: string;
-    Fields: TStringList;
+    Options : Integer;
+    Fields  : TStringList;
     // ”словие дл€ ON-token при поиске дубликатов
-    EquSet : string;
+    EquSet  : string;
     IndFieldsAdr: array of integer;
+
+    destructor Destroy; override;
   end;
 
 type
@@ -69,7 +72,7 @@ type
   TTableInf = class(TInterfacedObject)
   private
     FPars  : TFixPars;
-    FTblID : Integer;
+    FTableID : Integer;
     procedure FieldsInfo(Q : TAdsQuery); virtual;
     procedure IndexesInfo(SrcTbl: TTableInf; QWork : TAdsQuery); virtual;
   public
@@ -93,7 +96,7 @@ type
     // описание полей таблицы
     FieldsInf : TStringList;
     // описание индексов
-    IndexInf  : TList;
+    IndexInf  : TObjectList;
     // пол€ с типом autoincrement
     FieldsAI  : TStringList;
 
@@ -101,28 +104,22 @@ type
 
     // —писок резервных копий
     BackUps   : TStringList;
-    // »нфо дл€ BackUp/Work
-    //SafeFix   : TSafeFix;
 
     ErrInfo  : TErrInfo;
 
-    //T_DupRows   : TList;
-    //T_List4Del  : String;
 
     DmgdRIDs  : string;
     // список плохих записей
-    BadRecs   : TList;
+    BadRecs   : TObjectList;
     // список интервалов дл€ INSERT
-    GoodSpans : TList;
+    GoodSpans : TObjectList;
 
     TotalDel  : Integer;
     RowsFixed : Integer;
 
     property Pars : TFixPars read FPars write FPars;
 
-    //function Test1Table(SrcTbl : TTableInf; Check: TestMode): Integer; virtual;
-    function Test1Table(SrcTbl: TTableInf; Check: TestMode; SysAnsi: string):
-        Integer; virtual;
+    function Test1Table(SrcTbl: TTableInf; Check: TestMode; SysAnsi: string): Integer; virtual;
 
     // ”становка рабочей копии и объекта состо€ни€ исправлений
     function SetWorkCopy(P2TMP : string): Integer;
@@ -156,6 +153,14 @@ uses
   Math,
   DBFunc;
 
+destructor TIndexInf.Destroy;
+begin
+  FreeAndNil(Fields);
+  inherited Destroy;
+end;
+
+
+(*
 // ѕоиск среди компонентов существующего с заданным именем
 function TableExists(Owner : TComponent; CName : string) : TAdsTable;
 var
@@ -170,16 +175,16 @@ begin
       Break;
     end;
 end;
-
+*)
 constructor TTableInf.Create(TName : string; TID : Integer; Conn: TAdsConnection; AppPars : TFixPars);
 var
   PosPoint: Integer;
   cName : string;
-  T : TAdsTable;
+  //T : TAdsTable;
 begin
   inherited Create;
 
-  FTblID := TID;
+  FTableID := TID;
   Pars := AppPars;
   TableName := TName;
 
@@ -188,11 +193,8 @@ begin
   if (PosPoint > 0) then
     NameNoExt := Copy(TableName, 1, PosPoint - 1);
 
-  //IsFree := not (Conn.IsDictionaryConn);
-
-  //Self.Path2Src  := IncludeTrailingPathDelimiter(Conn.GetConnectionPath);
-
   cName := CMPNT_NAME + IntToStr(TID);
+(*
   T := TableExists(Conn.Owner, cName);
   if ( not Assigned(T) ) then begin
     AdsT := TAdsTable.Create(Conn.Owner);
@@ -201,12 +203,15 @@ begin
   end
   else
     AdsT := T;
-
+*)
+  AdsT := TAdsTable.Create(Conn.Owner);
+  AdsT.Name := cName;
+  AdsT.AdsConnection := Conn;
   AdsT.TableName := TName;
 
   FieldsInf  := TStringList.Create;
   FieldsAI   := TStringList.Create;
-  IndexInf   := TList.Create;
+  IndexInf   := TObjectList.Create;
   BackUps    := TStringList.Create;
   //SafeFix    := Pars.SafeFix;
 
@@ -214,14 +219,22 @@ begin
 
   ErrInfo   := TErrInfo.Create;
 
-  BadRecs   := TList.Create;
-  GoodSpans := TList.Create;
+  BadRecs   := TObjectList.Create;
+  //GoodSpans := TList.Create;
+  GoodSpans := TObjectList.Create;
 end;
 
 
 destructor TTableInf.Destroy;
 begin
-  //if FField2 <> nil then FreeAndNil(FField2);
+  FreeAndNil(GoodSpans);
+  FreeAndNil(BadRecs);
+  FreeAndNil(ErrInfo);
+  FreeAndNil(BackUps);
+  FreeAndNil(IndexInf);
+  FreeAndNil(FieldsAI);
+  FreeAndNil(FieldsInf);
+  FreeAndNil(AdsT);
   inherited Destroy;
 end;
 {
@@ -410,7 +423,7 @@ begin
 
   for i := 0 to AdsTI.IndexInf.Count - 1 do begin
 
-    IndInf := AdsTI.IndexInf.Items[i];
+    IndInf := TIndexInf(AdsTI.IndexInf.Items[i]);
 
     for j := 0 to IndInf.Fields.Count - 1 do begin
       k := IndInf.IndFieldsAdr[j];

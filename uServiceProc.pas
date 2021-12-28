@@ -130,9 +130,11 @@ const
   DATA_DICTIONARY_FILTER = 'Advantage Data Dictionaries (*.ADD)|*.ADD|All Files (*.*)|*.*';
   DATA_DIR_FILTER = 'Advantage Data Tables (*.ADT)|All Files (*.*)|*.*';
   DIR_4TMP_FILTER = 'Advantage Data Dictionaries (*.ADD)|*.ADD|All Files (*.*)|*.*';
+
   EMSG_BAD_DATA  : string = 'Некорректные данные!';
   EMSG_SORRY     : string = 'Восстановление невозможно..Пробуйте AdtFix...';
   EMSG_TBL_EMPTY : string = 'Таблица пуста!';
+  EMSG_NO_TBLS   : string = 'Таблицы ADS не найдены!';
 
 const
   // модификатор имени файла при создании backup
@@ -199,7 +201,7 @@ type
     // Флаг тестирования при построении списка таблиц
     AutoTest: Boolean;
     // Режим тестирования
-    TMode: TestMode;
+    TableTestMode: TestMode;
 
     // Способ удаления дубликатов
     DelDupMode: TDelDupMode;
@@ -342,7 +344,7 @@ begin
     Src        := Ini.ReadString(INI_PATHS, 'SRCPath', '');
     Tmp        := Ini.ReadString(INI_PATHS, 'TMPPath', '');
     AutoTest   := Ini.ReadBool(INI_CHECK, 'AutoTest', True);
-    TMode      := TestMode(IniFile.ReadInteger(INI_CHECK, 'TestMode', Integer(Simple)));
+    TableTestMode      := TestMode(IniFile.ReadInteger(INI_CHECK, 'TestMode', Integer(Simple)));
     DelDupMode := TDelDupMode(Ini.ReadInteger(INI_FIX, 'DelDupMode', Integer(DDUP_EX1)));
     SafeFix    := TSafeFix.Create(Ini);
     FLogFile   := Ini.ReadString(INI_PATHS, 'LogFile', LOG_FNAME);
