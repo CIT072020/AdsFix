@@ -31,7 +31,7 @@ type
 
     function TblErrorController(SrcTbl: TTableInf): Integer;
     function ChangeOriginal(P2Src, P2Tmp: string; SrcTbl: TTableInf): Boolean;
-    function RecoverOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer; Q: TAdsQuery): TTableInf;
+    function RecoverOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer): TTableInf;
   protected
     // Проверить и исправить отмеченные
     procedure RecoverAllBase(FixAll : Boolean = True);
@@ -326,20 +326,28 @@ end;
 
 
 // Полный цикл для одной таблицы
-function TFixADSTables.RecoverOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer; Q: TAdsQuery): TTableInf;
+function TFixADSTables.RecoverOneTable(TName: string; TID: Integer; Ptr2TableInf: Integer): TTableInf;
 var
   RowsFixed,
   ec : Integer;
   SrcTbl : TTableInf;
 begin
-
+(*
   if (Ptr2TableInf = 0) then begin
-    SrcTbl := TTableInf.Create(TName, TID, Q.AdsConnection, FixPars);
-    ec := SrcTbl.Test1Table(SrcTbl, FixPars.TableTestMode, FixPars.SysAdsPfx);
+    SrcTbl := TTableInf.Create(TName, TID, FixList.SrcConn, FixPars);
+    FixList.TestOneAds(Integer(SrcTbl),  FixPars.TableTestMode, ec);
   end else begin
     SrcTbl := TTableInf(Ptr(Ptr2TableInf));
     ec := SrcTbl.ErrInfo.ErrClass;
   end;
+*)
+
+  SrcTbl := TTableInf(Ptr(Ptr2TableInf));
+  if (SrcTbl.ErrInfo.State = TST_UNKNOWN) then
+    FixList.TestOneAds(Integer(SrcTbl),  FixPars.TableTestMode, ec)
+  else
+    ec := SrcTbl.ErrInfo.ErrClass;
+
   Result := SrcTbl;
 
   if (ec > 0) then begin
@@ -374,7 +382,7 @@ begin
         i := i + 1;
         if (FieldByName('IsMark').Value = True) OR (FixAll = True) then begin
           Edit;
-          SrcTbl := RecoverOneTable(FieldByName('TableName').Value, FieldByName('Npp').Value, FieldByName('TableInf').Value, dtmdlADS.qAny);
+          SrcTbl := RecoverOneTable(FieldByName('TableName').Value, FieldByName('Npp').Value, FieldByName('TableInf').Value);
           FieldValues['TableInf']  := Integer(SrcTbl);
           FieldValues['State']     := SrcTbl.ErrInfo.State;
           FieldValues['TestCode']  := SrcTbl.ErrInfo.ErrClass;

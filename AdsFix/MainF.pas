@@ -239,11 +239,14 @@ begin
   if (FixBaseUI.NewAdsList = True) then begin
     if (chkAutoTest.Checked = True) then
       FixBaseUI.FixList.TestSelected(AppFixPars.TableTestMode);
+      FixBaseUI.FixList.SrcList.EnableControls;
   end else begin
     // No Ads tables OR ???
-    ShowMessage('Неправильное имя пользователя или пароль');
+    if (FixBaseUI.FixPars.IsDict = True) then
+      ShowMessage('Неправильное имя пользователя или пароль')
+    else
+      ShowMessage('Таблицы не найдены!')
   end;
-  FixBaseUI.FixList.SrcList.EnableControls;
   finally
     TButtonControl(Sender).Enabled := True;
   end;

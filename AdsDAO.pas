@@ -55,13 +55,13 @@ type
   TAdsList = class
   private
     FPars    : TFixPars;
-    //FSrcPath : string;
     FAdsConn : TAdsConnection;
+    FWorkQuery : TAdsQuery;
+
     FTblList : TkbmMemTable;
     FTCount  : Integer;
     FFilled  : Boolean;
 
-    function TestOneAds(TblPtr : Integer; TMode : TestMode; var AdsTbl : TTableInf) : Integer; virtual; abstract;
   protected
   public
     Tested : Integer;
@@ -77,6 +77,9 @@ type
     // Создать список таблиц ADS
     function FillList4Fix(TableName : string = '') : Integer; virtual; abstract;
 
+    // Тестирование одной ADS-таблицы
+    function TestOneAds(TblPtr : Integer; TMode : TestMode; var ErrCode : Integer) : TTableInf; virtual; abstract;
+
     // Тестирование всех или только отмеченных
     procedure TestSelected(TMode : TestMode; ModeAll : Boolean = True);  virtual;
 
@@ -91,11 +94,11 @@ type
   private
     function DictAvail : Boolean;
     function TablesListFromDict(QA: TAdsQuery): Integer;
-    function TestOneAds(TblPtr : Integer; TMode : TestMode; var AdsTbl : TTableInf) : Integer; override;
   protected
   public
     // Создать список таблиц на базе словаря ADS
     function FillList4Fix(TableName : string = '') : Integer; override;
+    function TestOneAds(TblPtr : Integer; TMode : TestMode; var ErrCode : Integer) : TTableInf; override;
   published
   end;
 
@@ -104,11 +107,11 @@ type
   private
     function PathAvail : Boolean;
     function TablesListFromPath(QA: TAdsQuery): Integer;
-    function TestOneAds(TblPtr : Integer; TMode : TestMode; var AdsTbl : TTableInf) : Integer; override;
   protected
   public
     // Создать список свбодных таблиц
     function FillList4Fix(TableName : string = '') : Integer; override;
+    function TestOneAds(TblPtr : Integer; TMode : TestMode; var ErrCode : Integer) : TTableInf; override;
   published
   end;
 
@@ -180,6 +183,9 @@ begin
     SrcConn := dtmdlADS.cnnSrcAds;
   SrcList := dtmdlADS.mtSrc;
   Filled  := False;
+  FWorkQuery := TAdsQuery.Create(SrcConn.Owner);
+  FWorkQuery.AdsConnection := SrcConn;
+
 end;
 
 destructor TAdsList.Destroy;
@@ -187,6 +193,7 @@ var
   pTInf: Integer;
   SrcTbl: TTableInf;
 begin
+  //FreeAndNil(SrcTbl);
   with SrcList do begin
     First;
     while not Eof do begin
@@ -292,17 +299,17 @@ function TDictList.FillList4Fix(TableName : string = '') : Integer;
 begin
   Filled  := False;
   if (DictAvail = True) then begin
-    Pars.SysAdsPfx := SetSysAlias(dtmdlADS.qAny);
+    Pars.SysAdsPfx := SetSysAlias(FWorkQuery);
     if (TableName <> '') then
       TableName := Format(' WHERE (NAME=''%s'')', [TableName]);
-    with dtmdlADS.qTablesAll do begin
+    with FWorkQuery do begin
       Active := false;
       AdsCloseSQLStatement;
       SQL.Clear;
       SQL.Add('SELECT * FROM ' + Pars.SysAdsPfx + 'TABLES' + TableName);
       Active := true;
     end;
-    TablesCount := TablesListFromDict(dtmdlADS.qTablesAll);
+    TablesCount := TablesListFromDict(FWorkQuery);
     if (TablesCount = 0 ) then
       Result := UE_NO_ADS
     else begin
@@ -316,23 +323,20 @@ begin
 end;
 
 // Тестирование одной (Dictionary)
-function TDictList.TestOneAds(TblPtr : Integer; TMode : TestMode; var AdsTbl : TTableInf) : Integer;
-var
-  DT : TDictTable;
+function TDictList.TestOneAds(TblPtr : Integer; TMode : TestMode; var ErrCode : Integer) : TTableInf;
 begin
-  DT     := TDictTable(Ptr(TblPtr));
-  AdsTbl := DT;
-  Result := DT.Test1Table(DT, TMode, FPars.SysAdsPfx);
+  Result := TDictTable(Ptr(TblPtr));
+  ErrCode := Result.Test1Table(FWorkQuery, TMode, FPars.SysAdsPfx);
 end;
 
 // Тестирование одной (Free)
-function TFreeList.TestOneAds(TblPtr : Integer; TMode : TestMode; var AdsTbl : TTableInf) : Integer;
+function TFreeList.TestOneAds(TblPtr : Integer; TMode : TestMode; var ErrCode : Integer) : TTableInf;
 var
   FT : TFreeTable;
 begin
   FT := TFreeTable(Ptr(TblPtr));
-  AdsTbl := FT;
-  Result := FT.Test1Table(FT, TMode);
+  ErrCode := FT.Test1Table(FWorkQuery, TMode);
+  Result := FT;
 end;
 
 
@@ -354,7 +358,7 @@ begin
           // все непроверенные или отмеченные
           i := i + 1;
           Edit;
-          ErrCode := TestOneAds(FieldValues['TableInf'], TMode, SrcTbl);
+          SrcTbl := TestOneAds(FieldValues['TableInf'], TMode, ErrCode);
           FieldValues['AIncs']    := SrcTbl.FieldsAI.Count;
           FieldValues['TestCode'] := ErrCode;
           if (ErrCode > 0) then begin
@@ -392,7 +396,6 @@ end;
 function TFreeList.TablesListFromPath(QA: TAdsQuery): Integer;
 var
   i: Integer;
-  s: string;
 begin
   i := 0;
   SrcList.Close;
@@ -432,13 +435,13 @@ begin
       wich := 'NULL'
     else
       wich := '''' + TableName + '''';
-    Pars.SysAdsPfx := SetSysAlias(dtmdlADS.qAny);
-    dtmdlADS.qTablesAll.AdsCloseSQLStatement;
-    dtmdlADS.qTablesAll.SQL.Clear;
-    dtmdlADS.qTablesAll.SQL.Add('SELECT * FROM (EXECUTE PROCEDURE sp_GetTables(NULL,NULL,' + wich + ', ''TABLE'')) AS tmpAllT;');
-    dtmdlADS.qTablesAll.Active := True;
+    Pars.SysAdsPfx := SetSysAlias(FWorkQuery);
+    //FWorkQuery.AdsCloseSQLStatement;
+    FWorkQuery.SQL.Clear;
+    FWorkQuery.SQL.Add('SELECT * FROM (EXECUTE PROCEDURE sp_GetTables(NULL,NULL,' + wich + ', ''TABLE'')) AS tmpAllT;');
+    FWorkQuery.Active := True;
 
-    TablesCount := TablesListFromPath(dtmdlADS.qTablesAll);
+    TablesCount := TablesListFromPath(FWorkQuery);
     if (TablesCount = 0 ) then
       Result := UE_NO_ADS
     else begin
@@ -450,70 +453,5 @@ begin
     Result := UE_BAD_PATH;
     SrcConn.IsConnected := False;
 end;
-
-// Тестирование всех или только отмеченных
-{
-procedure TFreeList.TestSelected(ModeAll : Boolean; TMode : TestMode);
-var
-  ec, i: Integer;
-  TableInf : TFreeTable;
-begin
-
-    with SrcList do begin
-
-      First;
-      i := 0;
-      while not Eof do begin
-        i := i + 1;
-        if ((dtmdlADS.FSrcState.AsInteger = TST_UNKNOWN) AND (ModeAll = True))
-          OR ((dtmdlADS.FSrcMark.AsBoolean = True) AND (ModeAll = False)) then begin
-          // все непроверенные или отмеченные
-          Edit;
-
-          TableInf := TFreeTable.Create(dtmdlADS.FSrcTName.AsString, dtmdlADS.FSrcNpp.AsInteger, dtmdlADS.cnnSrcAds, Pars);
-          dtmdlADS.FSrcFixInf.AsInteger := Integer(TableInf);
-
-          ec := TableInf.Test1Table(TableInf, TMode);
-          dtmdlADS.FSrcAIncs.AsInteger := TableInf.FieldsAI.Count;
-          dtmdlADS.FSrcTestCode.AsInteger := ec;
-          if (ec > 0) then begin
-            dtmdlADS.FSrcMark.AsBoolean := True;
-            dtmdlADS.FSrcErrNative.AsInteger := TableInf.ErrInfo.NativeErr;
-            ec := TST_ERRORS;
-          end
-          else begin
-            dtmdlADS.FSrcMark.AsBoolean := False;
-            ec := TST_GOOD;
-            end;
-          dtmdlADS.FSrcState.AsInteger := ec;
-
-          Post;
-        end;
-        Next;
-      end;
-      First;
-
-    end;
-    SrcList.EnableControls;
-    SrcConn.IsConnected := False;
-end;
-}
-
-{
-procedure ClearTablesList(Owner : TComponent);
-var
-  iM,
-  i : Integer;
-begin
-  iM := Owner.ComponentCount;
-  // Удалить все таблицы прежнего списка
-  for i := 0 to Owner.ComponentCount -1 do
-    if ( Pos(CMPNT_NAME, Owner.Components[i].Name) > 0 ) then begin
-      TAdsTable(Owner.Components[i]).Close;
-      Owner.Components[i].Free;
-    end;
-end;
-}
-
 
 end.

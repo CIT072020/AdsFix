@@ -71,8 +71,8 @@ type
   // описание ADS-таблицы для восстановления
   TTableInf = class(TInterfacedObject)
   private
-    FPars  : TFixPars;
-    FTableID : Integer;
+    FTableID   : Integer;
+    FPars      : TFixPars;
     procedure FieldsInfo(Q : TAdsQuery); virtual;
     procedure IndexesInfo(SrcTbl: TTableInf; QWork : TAdsQuery); virtual;
   public
@@ -119,10 +119,11 @@ type
 
     property Pars : TFixPars read FPars write FPars;
 
-    function Test1Table(SrcTbl: TTableInf; Check: TestMode; SysAnsi: string): Integer; virtual;
+    //function Test1Table(SrcTbl: TTableInf; Check: TestMode; SysAnsi: string): Integer; virtual;  overload;
+    function Test1Table(QWork : TAdsQuery; Check: TestMode; SysAnsi: string): Integer; virtual;
 
     // Установка рабочей копии и объекта состояния исправлений
-    function SetWorkCopy(P2TMP : string): Integer;
+    function SetWorkCopy(Path2TMP: string): Integer;
 
     constructor Create(TName : string; TID : Integer; Conn: TAdsConnection; AppPars : TFixPars);
     destructor Destroy; override;
@@ -136,7 +137,8 @@ type
     procedure FieldsInfo(Q : TAdsQuery);
     procedure IndexesInfo(SrcTbl: TTableInf; Q : TAdsQuery);
   public
-    function Test1Table(AdsTI : TFreeTable; Check: TestMode): Integer;
+    function Test1Table(QWork : TAdsQuery; Check: TestMode): Integer;
+
     //constructor Create(TName : string; TID : Integer; Conn: TAdsConnection; AppPars : TAppPars); overload;
   end;
 
@@ -217,7 +219,8 @@ begin
 
   NeedBackUp := True;
 
-  ErrInfo   := TErrInfo.Create;
+  ErrInfo       := TErrInfo.Create;
+  ErrInfo.State := TST_UNKNOWN;
 
   BadRecs   := TObjectList.Create;
   //GoodSpans := TList.Create;
@@ -245,13 +248,12 @@ begin
 end;
 }
 
-// сведения о полях одной таблицы (Select из dictionary)
+// сведения о полях одной таблицы (Select для dictionary)
 procedure TTableInf.FieldsInfo(Q : TAdsQuery);
 var
   OneField: TFieldsInf;
 begin
   with Q do begin
-    Active := True;
     First;
     while not Eof do begin
       OneField := TFieldsInf.Create;
@@ -563,7 +565,7 @@ begin
   end;
 end;
 
-
+(*
 // тестирование одной таблицы на ошибки (Dictionary)
 function TTableInf.Test1Table(SrcTbl: TTableInf; Check: TestMode; SysAnsi: string): Integer;
 var
@@ -634,47 +636,114 @@ begin
   end;
 
 end;
+*)
+
+// тестирование одной таблицы на ошибки (Dictionary)
+function TTableInf.Test1Table(QWork : TAdsQuery; Check: TestMode; SysAnsi: string): Integer;
+var
+  iFld, ec: Integer;
+  TypeName, s: string;
+  ErrInf: TStringList;
+  AdsFT: UNSIGNED16;
+begin
+  Result := 0;
+  ErrInfo.State := TST_UNKNOWN;
+  if (AdsT.Active) then
+    AdsT.Close;
+
+  try
+    QWork.SQL.Clear;
+    QWork.SQL.Add( Format('SELECT * FROM %sCOLUMNS WHERE PARENT=''%s''' , [SysAnsi, TableName]) );
+    QWork.Active := True;
+
+    FieldsInfo(QWork);
+    // все уникальные индексы
+    QWork.SQL.Text := 'SELECT INDEX_OPTIONS, INDEX_EXPRESSION, PARENT FROM ' + SysAnsi + 'INDEXES WHERE (PARENT = ''' + TableName + ''') AND ((INDEX_OPTIONS & 1) = 1)';
+    IndexesInfo(Self, QWork);
+    RecCount := RecsBySQL(QWork, TableName);
+
+    // Easy Mode and others
+    AdsT.Open;
+    PositionSomeRecs(AdsT, FieldsInf, Check);
+    AdsT.Close;
+
+    if (Check = Medium)
+      OR (Check = Slow) then begin
+      s := 'EXECUTE PROCEDURE sp_Reindex(''' + TableName + '.adt'',0)';
+      QWork.AdsConnection.Execute(s);
+
+      if (Check = Slow) then begin
+
+          if (IndCount > 0) then begin
+        // есть уникальные индексы
+            iFld := Field4Alter(Self);
+            if (iFld >= 0) then begin
+              s := FieldsInf[iFld];
+              s := 'ALTER TABLE ' + TableName + ' ALTER COLUMN ' + s + ' ' + s + ' ' + TFieldsInf(FieldsInf.Objects[iFld]).TypeSQL;
+              QWork.AdsConnection.Execute(s);
+              s := IncludeTrailingPathDelimiter(QWork.AdsConnection.GetConnectionPath) + TableName + '*.BAK';
+              DeleteFiles(s);
+            end;
+          end;
+
+        // Realy need?
+        AdsT.PackTable;
+      end;
+
+    end;
+    ErrInfo.State  := TST_GOOD;
+    ErrInfo.MsgErr := '';
+
+  except
+    on E: EADSDatabaseError do begin
+      Result := E.ACEErrorCode;
+      ErrInfo.ErrClass  := E.ACEErrorCode;
+      ErrInfo.NativeErr := E.SQLErrorCode;
+      ErrInfo.MsgErr    := E.Message;
+      ErrInfo.State     := TST_ERRORS;
+    end;
+  end;
+
+end;
+
+
 
 // тестирование одной таблицы на ошибки (Free Table)
-function TFreeTable.Test1Table(AdsTI : TFreeTable; Check: TestMode): Integer;
+function TFreeTable.Test1Table(QWork : TAdsQuery; Check: TestMode): Integer;
 var
   iFld, ec: Integer;
   TypeName, s: string;
   ErrInf: TStringList;
   AdsFT: UNSIGNED16;
   Conn : TAdsConnection;
-  QWork : TAdsQuery;
 begin
   Result := 0;
+  ErrInfo.State := TST_UNKNOWN;
 
   try
-    Conn := AdsTI.AdsT.AdsConnection;
-    QWork := TAdsQuery.Create(AdsTI.AdsT.Owner);
-    QWork.AdsConnection := Conn;
     try
-      AdsTI.AdsT.Open;
+      AdsT.Open;
     except
       on E: EADSDatabaseError do begin
         if (E.ACEErrorCode = 5159) AND (E.SQLErrorCode = 0) then begin
-          if AdsDDFreeTable(PAnsiChar(AdsTI.Pars.Path2Src + AdsTI.TableName), nil) = AE_FREETABLEFAILED then
+          if AdsDDFreeTable(PAnsiChar(Pars.Path2Src + TableName), nil) = AE_FREETABLEFAILED then
             // Словарная таблица обязательно освобождается
-            raise EADSDatabaseError.Create(AdsTI.AdsT, UE_BAD_PREP, 'Ошибка освобождения таблицы');
+            raise EADSDatabaseError.Create(AdsT, UE_BAD_PREP, 'Ошибка освобождения таблицы');
         end;
       end;
     end;
 
     FieldsInfo(QWork);
-    IndexesInfo(AdsTI, QWork);
-    AdsTI.RecCount := RecsBySQL(QWork, AdsTI.TableName);
-    AdsTI.ErrInfo.State := TST_UNKNOWN;
+    IndexesInfo(Self, QWork);
+    RecCount      := RecsBySQL(QWork, TableName);
 
     // Easy Mode and others
-    AdsTI.AdsT.Open;
-    PositionSomeRecs(AdsTI.AdsT, AdsTI.FieldsInf, Check);
-    AdsTI.AdsT.Close;
-    if (AdsTI.IndexInf.Count > 0) then begin
-      s := Format('EXECUTE PROCEDURE sp_Reindex(''%s'',0)', [AdsTI.TableName]);
-      Conn.Execute(s);
+    AdsT.Open;
+    PositionSomeRecs(AdsT, FieldsInf, Check);
+    AdsT.Close;
+    if (IndexInf.Count > 0) then begin
+      s := Format('EXECUTE PROCEDURE sp_Reindex(''%s'',0)', [TableName]);
+      QWork.AdsConnection.Execute(s);
     end;
 
 
@@ -685,7 +754,7 @@ begin
 
       if (Check = Slow) then begin
 
-          if (AdsTI.IndexInf.Count > 0) then begin
+          if (IndexInf.Count > 0) then begin
         // есть уникальные индексы
 {
             iFld := Field4Alter(AdsTI);
@@ -700,19 +769,19 @@ begin
           end;
 
         // Realy need?
-        AdsTI.AdsT.PackTable;
+        AdsT.PackTable;
       end;
 
     end;
-    AdsTI.ErrInfo.State := TST_GOOD;
+    ErrInfo.State := TST_GOOD;
 
   except
     on E: EADSDatabaseError do begin
       Result := E.ACEErrorCode;
-      AdsTI.ErrInfo.ErrClass  := E.ACEErrorCode;
-      AdsTI.ErrInfo.NativeErr := E.SQLErrorCode;
-      AdsTI.ErrInfo.MsgErr    := E.Message;
-      AdsTI.ErrInfo.State     := TST_ERRORS;
+      ErrInfo.ErrClass  := E.ACEErrorCode;
+      ErrInfo.NativeErr := E.SQLErrorCode;
+      ErrInfo.MsgErr    := E.Message;
+      ErrInfo.State     := TST_ERRORS;
     end;
   end;
 
@@ -722,7 +791,7 @@ end;
 //-------------------------------------------------------------
 
 // Копия оригинала и освобождение таблицы
-function TTableInf.SetWorkCopy(P2TMP: string): Integer;
+function TTableInf.SetWorkCopy(Path2TMP: string): Integer;
 var
   s, FileSrc, FileSrcNoExt, FileDst: string;
 begin
@@ -731,20 +800,20 @@ begin
   if (Pars.IsDict = True) OR (Pars.SafeFix.UseCopy4Work = True) then begin
     // Исправления выполняются в копии таблицы
     // Предварительные исправления вносятся сюда
-    FileTmp := P2TMP + NameNoExt;
+    FileTmp := Path2TMP + NameNoExt;
 
     // Группа файлов в источнике
     FileSrc := Pars.Path2Src + NameNoExt;
     try
       s := FileSrc + ExtADT;
       if (not FileExists(FileTmp + ExtADT)) OR (Pars.SafeFix.ReWriteWork = True) then
-        if (CopyOneFile(s, P2TMP) <> 0) then
+        if (CopyOneFile(s, Path2TMP) <> 0) then
           raise Exception.Create('Ошибка копирования ' + s);
 
       s := FileSrc + ExtADM;
       if FileExists(s) then begin
         if (not FileExists(FileTmp + ExtADM)) OR (Pars.SafeFix.ReWriteWork = True) then
-          if (CopyOneFile(s, P2TMP) <> 0) then
+          if (CopyOneFile(s, Path2TMP) <> 0) then
             raise Exception.Create('Ошибка копирования ' + s);
       end;
 
