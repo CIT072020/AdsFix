@@ -109,6 +109,8 @@ const
   UE_BAD_TMSTMP = 8903;
   // недопустимый AUTOINC
   UE_BAD_AINC = 8904;
+  // недопустимый LOGICAL
+  UE_BAD_LOGIC = 8905;
 
   // копия не получилась
   UE_BAD_PREP = 9001;

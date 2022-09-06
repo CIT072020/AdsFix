@@ -455,6 +455,7 @@ end;
 // Чтение всех полей записи с обработкой ошибок
 function Read1RecEx(Fields: TFields; FInf: TStringList) : TBadRec;
 var
+  Logic : Boolean;
   Ms, j: Integer;
   v: Variant;
   t: TDateTime;
@@ -489,6 +490,18 @@ begin
           if (Ms < 0) then
               //raise Exception.Create(EMSG_BAD_DATA);
               raise EADSDatabaseError.create(nil, UE_BAD_AINC, '');
+        end
+        else if (FI.FieldType = ADS_LOGICAL) then begin
+          Ms    := 0;
+          Logic := Fields[j].GetData(Addr(Ms));
+          Logic := Fields[j].Value;
+          if (Logic = True) then
+            if (Ms <> $FFFF) then
+              raise EADSDatabaseError.create(nil, UE_BAD_LOGIC, '')
+          else
+            if (Logic = False) then
+              if (Ms <> $0) then
+              raise EADSDatabaseError.create(nil, UE_BAD_LOGIC, '');
         end;
       end;
 
