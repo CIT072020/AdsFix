@@ -165,10 +165,20 @@ begin
         begin
           SrcTbl.RowsFixed := Fix8901(SrcTbl, dtmdlADS.tblTmp);
         end;
+      UE_BAD_AINC:
+        begin
+          if (SrcTbl.GoodAI > 0) then begin
+            if (SrcTbl.DirectAutoInc(FixPars.Path2Src + SrcTbl.NameNoExt + ExtADT, SrcTbl.GoodAI) > 0) then
+              SrcTbl.ErrInfo.FixErr := 0;
+          end else begin
+            FixState := FIX_NOTHG;
+            PutError(EMSG_SORRY);
+          end;
+        end;
     end;
 
     SrcTbl.ErrInfo.State := FixState;
-    if (SrcTbl.RowsFixed > 0) then
+    if (SrcTbl.RowsFixed > 0) OR (UE_BAD_AINC = SrcTbl.ErrInfo.ErrClass) then
       SrcTbl.ErrInfo.FixErr := 0
     else
       SrcTbl.ErrInfo.FixErr := FIX_NOTHG;

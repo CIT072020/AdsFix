@@ -75,6 +75,7 @@ type
     FPars      : TFixPars;
     procedure FieldsInfo(Q : TAdsQuery); virtual;
     procedure IndexesInfo(SrcTbl: TTableInf; QWork : TAdsQuery); virtual;
+    function TestAutoIncMax(QWork : TAdsQuery) : Integer;
   public
     // Имя таблицы в словаре или в папке (Free table)
     TableName : string;
@@ -116,6 +117,8 @@ type
 
     TotalDel  : Integer;
     RowsFixed : Integer;
+    //
+    GoodAI : Integer;
 
     property Pars : TFixPars read FPars write FPars;
 
@@ -124,6 +127,7 @@ type
 
     // Установка рабочей копии и объекта состояния исправлений
     function SetWorkCopy(Path2TMP: string): Integer;
+    function DirectAutoInc(TName : string; IsGet : integer = -1) : Integer;
 
     constructor Create(TName : string; TID : Integer; Conn: TAdsConnection; AppPars : TFixPars);
     destructor Destroy; override;
@@ -651,6 +655,66 @@ begin
 end;
 *)
 
+
+// Проверка корректного AUTOINC в заголовке
+function TTableInf.DirectAutoInc(TName: string; IsGet: integer = -1): Integer;
+var
+  AdsTblStream: TFileStream;
+  fMode: Word;
+begin
+  Result := -1;
+  try
+    try
+      if (IsGet = -1) then
+        fMode := fmOpenRead OR fmShareDenyNone
+      else
+        fMode := fmOpenReadWrite OR fmShareDenyNone;
+      AdsTblStream := TFileStream.Create(TName, fMode);
+      AdsTblStream.Seek($50, soFromBeginning);
+      if (IsGet = -1) then begin
+        AdsTblStream.ReadBuffer(Result, 4);
+      end
+      else begin
+        AdsTblStream.WriteBuffer(IsGet, 4);
+        Result := IsGet;
+      end;
+    except
+      Result := -1;
+    end;
+  finally
+    AdsTblStream.Free;
+  end;
+end;
+
+
+
+function TTableInf.TestAutoIncMax(QWork : TAdsQuery) : Integer;
+const
+  FIELD_AI = 'MAX_AUTOINC';
+var
+  s : string;
+  HeadAI,
+  CurMax : Integer;
+begin
+  Result := TST_GOOD;
+  QWork.SQL.Clear;
+  QWork.SQL.Add( Format('SELECT MAX(%s) AS %s FROM %s', [FieldsAI[0], FIELD_AI, TableName]) );
+  QWork.Active := True;
+  CurMax := QWork.FieldByName(FIELD_AI).AsInteger;
+  QWork.Close;
+  QWork.AdsCloseSQLStatement;
+  QWork.AdsConnection.CloseCachedTables;
+
+  HeadAI := DirectAutoInc(Pars.Path2Src + NameNoExt + ExtADT);
+  if (HeadAI <= CurMax) then begin
+    Result := UE_BAD_AINC;
+    GoodAI := CurMax + 1;
+    raise EADSDatabaseError.create(nil, UE_BAD_AINC, 'Некорректное значение autoinc');
+  end;
+end;
+
+
+
 // тестирование одной таблицы на ошибки (Dictionary)
 function TTableInf.Test1Table(QWork : TAdsQuery; Check: TestMode; SysAnsi: string): Integer;
 var
@@ -702,6 +766,10 @@ begin
         // Realy need?
         AdsT.PackTable;
       end;
+
+    end;
+    if (Self.FieldsAI.Count > 0) then begin
+      ErrInfo.State  := TestAutoIncMax(QWork);
 
     end;
     ErrInfo.State  := TST_GOOD;
