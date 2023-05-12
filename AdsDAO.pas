@@ -16,18 +16,6 @@ type
     dsSrc: TDataSource;
     qTablesAll: TAdsQuery;
     qAny: TAdsQuery;
-
-    mtSrc: TkbmMemTable;
-    FSrcNpp: TIntegerField;
-    FSrcMark: TBooleanField;
-    FSrcTName: TStringField;
-    FSrcTestCode: TIntegerField;
-    FSrcTCaption: TStringField;
-    FSrcState: TIntegerField;
-    FSrcFixCode: TIntegerField;
-    FSrcAIncs: TIntegerField;
-    FSrcErrNative: TIntegerField;
-    FSrcFixInf: TIntegerField;
     cnnTmp: TAdsConnection;
     qDst: TAdsQuery;
     qSrcFields: TAdsQuery;
@@ -35,8 +23,6 @@ type
     qDupGroups: TAdsQuery;
     tblTmp: TAdsTable;
     dsPlan: TDataSource;
-    FSrcFixLog: TMemoField;
-    procedure DataModuleCreate(Sender: TObject);
   private
     FSysAlias : string;
   public
@@ -83,7 +69,7 @@ type
     // “естирование всех или только отмеченных
     procedure TestSelected(TMode : TestMode; ModeAll : Boolean = True);  virtual;
 
-    constructor Create(APars : TFixPars; Cnct : TAdsConnection = nil);
+    constructor Create(APars : TFixPars; AllTables: TkbmMemTable; Cnct : TAdsConnection = nil);
     destructor Destroy; override;
   published
 
@@ -118,8 +104,6 @@ type
 //---
 // добавление префикса /ANSI_ (начина€ с верси€ 10)
 function SetSysAlias(QV : TAdsQuery) : string;
-// установка/сброс сортировки списка таблиц по статусу
-procedure SortByState(SetNow : Boolean);
 
 var
   dtmdlADS: TdtmdlADS;
@@ -134,22 +118,6 @@ uses
   AuthF;
 {$R *.dfm}
 
-// установка/сброс сортировки списка таблиц по статусу
-procedure SortByState(SetNow : Boolean);
-begin
-  if (SetNow = True) then
-    dtmdlADS.mtSrc.IndexName := IDX_SRC
-  else
-    dtmdlADS.mtSrc.IndexName := '';
-end;
-
-
-// добавление сортировки списка таблиц по статусу
-procedure TdtmdlADS.DataModuleCreate(Sender: TObject);
-begin
-  dtmdlADS.mtSrc.AddIndex(IDX_SRC, 'State', [ixDescending]);
-  SortByState(True);
-end;
 
 // добавление префикса /ANSI_ (начина€ с верси€ 10)
 // дл€ системных таблиц ADS
@@ -173,15 +141,16 @@ begin
 end;
 
 
-constructor TAdsList.Create(APars : TFixPars; Cnct : TAdsConnection = nil);
+constructor TAdsList.Create(APars : TFixPars; AllTables: TkbmMemTable; Cnct : TAdsConnection = nil);
 begin
   inherited Create;
   Pars := APars;
+  SrcList := AllTables;
   if (Assigned(Cnct)) then
     SrcConn := Cnct
   else
     SrcConn := dtmdlADS.cnnSrcAds;
-  SrcList := dtmdlADS.mtSrc;
+
   Filled  := False;
   FWorkQuery := TAdsQuery.Create(SrcConn.Owner);
   FWorkQuery.AdsConnection := SrcConn;
@@ -317,8 +286,7 @@ begin
       Filled := True;
     end;
     SrcConn.IsConnected := False;
-  end
-  else
+  end else
     Result := UE_BAD_USER;
 end;
 
@@ -345,12 +313,14 @@ procedure TAdsList.TestSelected(TMode : TestMode; ModeAll : Boolean = True);
 var
   StateByTest,
   ErrCode, i: Integer;
+  s: string;
   SrcTbl : TTableInf;
 begin
+  i := 0;
   if (Filled = True) then begin
     with SrcList do begin
       First;
-      i := 0;
+      FPars.Logger.Add2Log('—тарт тестировани€ выбранных таблиц');
       ErrTested := 0;
       while not Eof do begin
         if ((FieldValues['State'] = TST_UNKNOWN) AND (ModeAll = True))
@@ -381,6 +351,7 @@ begin
     end;
   end;
   Tested := i;
+  FPars.Logger.Add2Log(Format('¬сего проверено: %d, с ошибками: %d',[Tested, ErrTested]));
   SrcConn.IsConnected := False;
 end;
 

@@ -478,9 +478,9 @@ begin
         if (FI.FieldType in ADS_DATES) then begin
           t := v;
           Year := YearOf(t);
-          if (Year <= 1) or (Year > 2100) then
+          if (Year <= 200) or (Year > 2030) then
             // !!! Пока не реагирую 04.11.21
-            //raise EADSDatabaseError.create(nil, UE_BAD_YEAR, '');
+            raise EADSDatabaseError.create(nil, UE_BAD_YEAR, '');
             ;
           if (FI.FieldType = ADS_TIMESTAMP) then begin
             Ms := (DateTimeToTimeStamp(t)).Time;

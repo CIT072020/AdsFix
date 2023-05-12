@@ -8,7 +8,7 @@ uses
   DBGridEh, Menus, DB,ComCtrls, FileCtrl, IniFiles, ShellAPI, TypInfo,
   kbmMemTable, DBCtrls,
   SasaIniFile,
-  FuncPr;
+  FuncPr, XPMan, DBGrids;
 
 type
   TFormMain = class(TForm)
@@ -51,6 +51,7 @@ type
     chkRewriteCopy: TCheckBox;
     chkBackUp: TCheckBox;
     btnTTmp: TButton;
+    xpmnfstMainForm1: TXPManifest;
     procedure ChangePath2TmpClick(Sender: TObject; var Handled: Boolean);
     procedure btnTblListClick(Sender: TObject);
     procedure btnRestOrigClick(Sender: TObject);
@@ -101,21 +102,20 @@ uses
 
 
 procedure TFormMain.FormCreate(Sender: TObject);
-var
-  Ini: TSasaIniFile;
 begin
   cbbPath2Src.Items.Clear;
   cbbPath2Src.Items.Add(CONNECTIONTYPE_DDBROWSE);
   cbbPath2Src.Items.Add(CONNECTIONTYPE_DIRBROWSE);
 
-  Ini := TSasaIniFile.Create(ChangeFileExt(Application.ExeName, '.INI'));
-  AppFixPars := TFixPars.Create(Ini);
+  FixBaseUI := TFixADSTablesUI.Create(IncludeTrailingBackslash(ExtractFileDir(Application.ExeName)));
+  AppFixPars := FixBaseUI.FixPars;
+  dtmdlADS.dsSrc.DataSet := FixBaseUI.AllTables;
 
-  cbbPath2Src.Text   := AppFixPars.Src;
+  cbbPath2Src.Text := AppFixPars.Src;
   btnTblList.Enabled := (Length(cbbPath2Src.Text) > 0);
-  edtPath2Tmp.Text   := AppFixPars.Tmp;
+  edtPath2Tmp.Text := AppFixPars.Tmp;
 
-  chkAutoTest.Checked  := AppFixPars.AutoTest;
+  chkAutoTest.Checked := AppFixPars.AutoTest;
   rgTestMode.ItemIndex := Integer(AppFixPars.TableTestMode);
 
   chkUseWCopy.Checked := AppFixPars.SafeFix.UseCopy4Work;
@@ -125,15 +125,14 @@ begin
   rgDelDupMode.ItemIndex := Integer(AppFixPars.DelDupMode);
 
   AppFixPars.ShowForm := Self;
-  FixBaseUI := TFixADSTablesUI.Create(AppFixPars);
 end;
 
 procedure TFormMain.FormDestroy(Sender: TObject);
 var
   Ini: TSasaIniFile;
 begin
-  ProceedBackUps(0);
-  Ini := AppFixPars.IniFile;
+  ProceedBackUps(0, FixBaseUI.FixList.SrcList);
+  Ini := TSasaIniFile.Create(AppFixPars.IniName);
   try
     Ini.WriteString(INI_PATHS, 'SRCPath', AppFixPars.Src);
     Ini.WriteSTring(INI_PATHS, 'TMPPath', AppFixPars.Tmp);
@@ -148,9 +147,9 @@ begin
     Ini.WriteInteger(INI_FIX, 'DelDupMode', Ord(AppFixPars.DelDupMode));
     Ini.UpdateFile;
   finally
-    Ini.Free;
+    FreeAndNil(Ini);
   end;
-  AppFixPars.Free;
+  FreeAndNil(FixBaseUI);
 end;
 
 procedure TFormMain.cbbPath2SrcDropDown(Sender: TObject);
@@ -306,7 +305,7 @@ procedure TFormMain.btnRestOrigClick(Sender: TObject);
 begin
   TButtonControl(Sender).Enabled := False;
   try
-    ProceedBackUps(1);
+    ProceedBackUps(1, FixBaseUI.FixList.SrcList);
   finally
     TButtonControl(Sender).Enabled := True;
   end;

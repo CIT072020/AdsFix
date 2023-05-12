@@ -11,7 +11,8 @@ uses
   MainF in 'MainF.pas' {FormMain},
   uTableUtils in '..\uTableUtils.pas',
   uFixTypes in '..\uFixTypes.pas',
-  uIFixDmgd in '..\uIFixDmgd.pas';
+  uIFixDmgd in '..\uIFixDmgd.pas',
+  uLoggerThr in '..\..\Lais7\OAIS\uLoggerThr.pas';
 
 {$R *.res}
 

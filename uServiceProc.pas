@@ -8,6 +8,7 @@ uses
   ShlObj,
   adsdata,
   ace,
+  uLoggerThr,
   SasaINiFile;
 
   
@@ -54,7 +55,16 @@ const
   ExtADM = '.adm';
   ExtADI = '.adi';
 
+type
+  TFixWork     = (fxNo, fxShowUI, fxInApp, fxStandAlone);
+  TFixWorkMode = set of TFixWork;
+
 const
+  FIX_MODE_UI     = 1;
+  FIX_MODE_SILENT = 2;
+
+  INI_NAME   = 'AdsFix.ini';
+  
   // Секции INI
   INI_PATHS  = 'PATH';
   INI_CHECK  = 'CHECK';
@@ -180,12 +190,16 @@ type
   // Параметры для восстановления
   TFixPars = class
   private
+    FIniName,
     FSrc    : String;
     FPath2Src : String;
     FTmp    : String;
-    FLogFile : string;
-    FLogLevel : Integer;
+    //FLogFile : string;
+    //FLogLevel : Integer;
     //FIsDict : Boolean;
+
+    FLogger : TLoggerThread;
+
     procedure FWriteSrc(const Value : string);
     procedure FWriteTmp(const Value : string);
     function  IsDictionary: Boolean;
@@ -215,13 +229,14 @@ type
     // автопоиск наиболее подходящих строк для удаления из дубликатов
     AutoFix: Boolean;
 
-    IniFile : TSasaIniFile;
+    //IniFile : TSasaIniFile;
     // Form to show result
     ShowForm: TForm;
 
     // Инфо для BackUp/Work
     SafeFix   : TSafeFix;
 
+    property IniName : string read FIniName;
     // Путь к списоку таблиц (словарь или папка)
     property Src : string read FSrc write FWriteSrc;
     // Путь к папке с рабочими копиями
@@ -232,6 +247,9 @@ type
 
     // Путь к папке с исходными таблицами
     property Path2Src : String read FPath2Src;
+
+    //
+    property Logger : TLoggerThread read FLogger write FLogger;
 
     function IsCorrectTmp(Path2Tmp: string): string;
 
@@ -338,27 +356,37 @@ begin
 end;
 
 constructor TFixPars.Create(Ini : TSasaIniFile);
+const
+  LOG_ADSFIX = 'AdsFix.log';
+var
+ FileLog: string;
+ LogEnable: Boolean;
 begin
   inherited Create;
-  IniFile := Ini;
-  ULogin := USER_EMPTY;
+  FIniName := Ini.FileName;
+  ULogin   := USER_EMPTY;
   try
     Src        := Ini.ReadString(INI_PATHS, 'SRCPath', '');
     Tmp        := Ini.ReadString(INI_PATHS, 'TMPPath', '');
     AutoTest   := Ini.ReadBool(INI_CHECK, 'AutoTest', True);
-    TableTestMode      := TestMode(IniFile.ReadInteger(INI_CHECK, 'TestMode', Integer(Simple)));
+    TableTestMode := TestMode(Ini.ReadInteger(INI_CHECK, 'TestMode', Integer(Simple)));
     DelDupMode := TDelDupMode(Ini.ReadInteger(INI_FIX, 'DelDupMode', Integer(DDUP_EX1)));
     SafeFix    := TSafeFix.Create(Ini);
-    FLogFile   := Ini.ReadString(INI_PATHS, 'LogFile', LOG_FNAME);
-    FLogLevel  := Ini.ReadInteger(INI_PATHS, 'LogLevel', LOG_MEDIUM);
+    //FLogFile   := Ini.ReadString(INI_PATHS, 'LogFile', LOG_FNAME);
+    //FLogLevel  := Ini.ReadInteger(INI_PATHS, 'LogLevel', LOG_MEDIUM);
+
+    FileLog    := '1';
+    FileLog    := Ini.ReadString(INI_PATHS, 'Log', FileLog);
+    FLogger    := TLoggerThread.Create(FileLog, LOG_ADSFIX, True, LogEnable);
   finally
   end;
 end;
 
 destructor TFixPars.Destroy;
 begin
-  inherited Destroy;
+  FreeAndNil(FLogger);
   FreeAndNil(SafeFix);
+  inherited Destroy;
 end;
 
 function TFixPars.IsDictionary : Boolean;

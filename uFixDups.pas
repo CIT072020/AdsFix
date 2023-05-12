@@ -96,7 +96,7 @@ type
 
 // Исправить оригинал для отмеченных
 //procedure ChangeOriginalAllMarked;
-procedure ProceedBackUps(Mode : Integer);
+procedure ProceedBackUps(Mode : Integer; AllTables: TkbmMemTable);
 
 // Easy Mode - one button
 //procedure FullFixAllMarked(FixAll : Boolean = True);
@@ -267,19 +267,6 @@ end;
 
 
 
-
-{
-procedure TFixUniq.SetList4Del(NewIDs: string);
-begin
-  if (Length(NewDis) = 0) then
-    FIDs4Del := ''
-  else begin
-    if (Length(FIDs4Del) > 0) then
-      NewIDs := ',' + NewDis;
-    FIDs4Del := FIDs4Del + NewIDs;
-  end;
-end;
-}
 
 // Добавить в список
 function TFixUniq.NewRow4Del(Q: TAdsQuery; Dst : TStringList; var Why: Integer; DelEmpty : Boolean = False): string;
@@ -645,17 +632,17 @@ begin
 end;
 
 // Удалить BAckup оригиналов
-procedure ProceedBackUps(Mode : Integer);
+procedure ProceedBackUps(Mode : Integer; AllTables: TkbmMemTable);
 var
   PTblInf: ^TTableInf;
   TotFiles: Integer;
 begin
-  if (dtmdlADS.mtSrc.Active = True) then
-    with dtmdlADS.mtSrc do begin
+  if (AllTables.Active = True) then
+    with AllTables do begin
       First;
       TotFiles := 0;
       while not Eof do begin
-        PTblInf := Ptr(dtmdlADS.FSrcFixInf.AsInteger);
+        PTblInf := Ptr(FieldByName('TableInf').AsInteger);
         if Assigned(PTblInf) then begin
           if (Mode = 0) then
             TotFiles := TotFiles + DelBUps4OneTable(TTableInf(PTblInf))
@@ -665,7 +652,6 @@ begin
         Next;
       end;
     end;
-
 end;
 
 

@@ -22,12 +22,15 @@ type
 
 type
 
-  TFixADSTables = class(TInterfacedObject)
   // Класс исправления ошибок в таблицах ADS
+  //TFixADSTables = class(TInterfacedObject)
+  TFixADSTables = class(TObject)
   private
     FIniName : string;
     FFixPars : TFixPars;
+    FTblList : TkbmMemTable;
     FAdsList : TAdsList;
+    FFixServiceMode : TFixWorkMode;
 
     function TblErrorController(SrcTbl: TTableInf): Integer;
     function ChangeOriginal(P2Src, P2Tmp: string; SrcTbl: TTableInf): Boolean;
@@ -38,8 +41,14 @@ type
   public
     // Параметры проверки и исправления
     property FixPars : TFixPars read FFixPars write FFixPars;
+
+    // Датасет для списка таблиц (словарь или папка)
+    property AllTables: TkbmMemTable read FTblList;
+
     // Список таблиц (словарь или папка)
     property FixList : TAdsList read FAdsList;
+    // режим вызова объекта
+    property FixServiceMode : TFixWorkMode read FFixServiceMode write FFixServiceMode;
 
     // Построить список таблиц (словарь или папка)
     function NewAdsList(TableName: string = ''): Boolean;
@@ -47,8 +56,9 @@ type
     // Проверить и исправить все, что обнаружится
     function RecoverAll(TableName : string = '') : Integer;
 
-    constructor Create(FixBasePars: TFixPars); overload;
-    constructor Create(IniName : string; Path2Fix : string = ''); overload;
+    //constructor Create(FixBasePars: TFixPars); overload;
+
+    constructor Create(IniPath: string; FixMode: TFixWorkMode = [fxShowUI, fxStandAlone]; Path2Fix: string = '');
     destructor Destroy; override;
   published
   end;
@@ -71,31 +81,33 @@ type
 
 
 var
-  //FixBase   : TFixADSTables;
   FixBaseUI : TFixADSTablesUI;
 
 implementation
 
 uses
   FileUtil,
+  DB,
   FuncPr,
   SasaINiFile,
+  uUseful,
   uIFixDmgd;
 
 
-constructor TFixADSTables.Create(FixBasePars : TFixPars);
+constructor TFixADSTables.Create(IniPath: string; FixMode: TFixWorkMode = [fxShowUI, fxStandAlone]; Path2Fix: string = '');
+var
+  xIni: TSasaIniFile;
 begin
   inherited Create;
-  FixPars  := FixBasePars;
-  FIniName := '';
-  FAdsList := nil;
-end;
+  FIniName := IniPath + INI_NAME;
+  FFixServiceMode := FixMode;
+  xIni := TSasaIniFile.Create(FIniName);
+  FFixPars := TFixPars.Create(xIni);
 
-constructor TFixADSTables.Create(IniName : string; Path2Fix : string = '');
-begin
-  inherited Create;
-  FIniName := IniName;
-  FFixPars := TFixPars.Create(TSasaIniFile.Create(IniName));
+  FTblList := TkbmMemTable(CreateMemTable('New_mtSrc', xIni, 'TABLES_ADS'));
+  FTblList.AddIndex(IDX_SRC, 'State', [ixDescending]);
+  FTblList.IndexName := IDX_SRC;
+
   if (Path2Fix <> '') then
     FFixPars.Src := Path2Fix;
   FAdsList := nil;
@@ -103,10 +115,9 @@ end;
 
 destructor TFixADSTables.Destroy;
 begin
-  inherited Destroy;
-  if (FIniName <> '') then
-    FreeAndNil(FFixPars);
+  FreeAndNil(FFixPars);
   FreeAndNil(FAdsList);
+  inherited Destroy;
 end;
 
 //-------------------------------------------------------------
@@ -116,10 +127,11 @@ begin
   Result := False;
   if (Assigned(FAdsList)) then
     FreeAndNil(FAdsList);
+  FTblList.Close;
   if (FixPars.IsDict) then
-    FAdsList := TDictList.Create(FixPars)
+    FAdsList := TDictList.Create(FixPars, FTblList)
   else
-    FAdsList := TFreeList.Create(FixPars);
+    FAdsList := TFreeList.Create(FixPars, FTblList);
   if (FAdsList.FillList4Fix(TableName) = UE_OK) then
     Result := True
   else
@@ -429,14 +441,13 @@ end;
 procedure TFixADSTablesUI.RecoverMarked;
 begin
   if ( Assigned(FixList) AND (FixList.Filled) ) then begin
-    SortByState(False);
+    FTblList.IndexName := '';
     FixList.TestSelected(FixPars.TableTestMode, False);
     RecoverAllBase(False);
-    SortByState(True);
+    FTblList.IndexName := IDX_SRC;
   end
   else
     PutError('Таблицы не найдены!');
-
 end;
 
 
@@ -455,8 +466,8 @@ begin
     while not Eof do begin
       i := i + 1;
       //SrcList.
-      if (dtmdlADS.FSrcMark.AsBoolean = True) then begin
-        SrcTbl := TTableInf(Ptr(dtmdlADS.FSrcFixInf.AsInteger));
+      if (FieldByName('IsMark').AsBoolean = True) then begin
+        SrcTbl := TTableInf(Ptr(FieldByName('TableInf').AsInteger));
         if (Assigned(SrcTbl)) then begin
           // Тестирование выполнялось, объект создан
           Edit;
@@ -464,12 +475,11 @@ begin
           ErrCode := SrcTbl.SetWorkCopy(FixPars.Tmp);
           if (ErrCode = 0) then begin
             ErrCode := TblErrorController(SrcTbl);
-            dtmdlADS.FSrcState.AsInteger := SrcTbl.ErrInfo.State;
-            dtmdlADS.FSrcFixCode.AsInteger := SrcTbl.ErrInfo.FixErr;
-          end
-          else begin
-            dtmdlADS.FSrcState.AsInteger   := FIX_ERRORS;
-            dtmdlADS.FSrcFixCode.AsInteger := ErrCode;
+            FieldByName('State').AsInteger   := SrcTbl.ErrInfo.State;
+            FieldByName('FixCode').AsInteger := SrcTbl.ErrInfo.FixErr;
+          end else begin
+            FieldByName('State').AsInteger   := FIX_ERRORS;
+            FieldByName('FixCode').AsInteger := ErrCode;
           end;
 
           Post;
@@ -493,36 +503,34 @@ var
   GoodChange: Boolean;
   i: Integer;
   SrcTbl: TTableInf;
-  //DAds  : TTblDict;
 begin
-  with dtmdlADS.mtSrc do begin
+  with FTblList do begin
     First;
     i := 0;
     while not Eof do begin
       i := i + 1;
-      if (dtmdlADS.FSrcMark.AsBoolean = True) then begin
+      if (FieldByName('IsMark').AsBoolean = True) then begin
         // для отмеченных
 
-        SrcTbl := TTableInf(Ptr(dtmdlADS.FSrcFixInf.AsInteger));
+        SrcTbl := TTableInf(Ptr(FieldByName('TableInf').AsInteger));
         if (Assigned(SrcTbl)) then begin
           // Тестирование выполнялось, объект создан, есть пофиксеные записи
           if (SrcTbl.ErrInfo.State = FIX_GOOD) then begin
 
-            dtmdlADS.mtSrc.Edit;
+            Edit;
             GoodChange := ChangeOriginal(FixPars.Path2Src, FixPars.Tmp, SrcTbl);
             //(TFormMain(AppPars.ShowForm)).lblResIns.Caption := IntToStr(SrcTbl.ErrInfo.TotalIns);
             //GoodChange := DAds.ChangeOriginal;
             if (GoodChange = True) then begin
           // успешно вствлено
-              dtmdlADS.FSrcMark.AsBoolean := False;
-            end
-            else begin
+              FieldByName('IsMark').AsBoolean := False;
+            end else begin
           // ошибки вставки
             end;
-            dtmdlADS.FSrcState.AsInteger   := SrcTbl.ErrInfo.State;
-            dtmdlADS.FSrcFixCode.AsInteger := SrcTbl.ErrInfo.InsErr;
+            FieldByName('State').AsInteger   := SrcTbl.ErrInfo.State;
+            FieldByName('FixCode').AsInteger := SrcTbl.ErrInfo.InsErr;
 
-            dtmdlADS.mtSrc.Post;
+            Post;
           end;
         end;
       end;
