@@ -114,7 +114,7 @@ uses
   Controls,
   StrUtils,
   FileUtil,
-  uFixDups,
+  uFixErrs,
   AuthF;
 {$R *.dfm}
 

@@ -7,12 +7,11 @@ uses
   AuthF in '..\AuthF.pas' {FormAuth},
   AdsDAO in '..\AdsDAO.pas' {dtmdlADS: TDataModule},
   uServiceProc in '..\uServiceProc.pas',
-  uFixDups in '..\uFixDups.pas',
-  MainF in 'MainF.pas' {FormMain},
+  MainF in '..\MainF.pas' {FormMain},
   uTableUtils in '..\uTableUtils.pas',
   uFixTypes in '..\uFixTypes.pas',
-  uIFixDmgd in '..\uIFixDmgd.pas',
-  uLoggerThr in '..\..\Lais7\OAIS\uLoggerThr.pas';
+  uLoggerThr in '..\..\Lais7\OAIS\uLoggerThr.pas',
+  uFixErrs in '..\uFixErrs.pas';
 
 {$R *.res}
 

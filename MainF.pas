@@ -94,7 +94,7 @@ uses
   ace,
   AdsDAO,
   uFixTypes,
-  uFixDups,
+  uFixErrs,
   uServiceProc,
   uTableUtils;
 

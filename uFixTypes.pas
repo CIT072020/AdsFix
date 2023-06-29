@@ -11,7 +11,7 @@ uses
   kbmMemTable,
   AdsDAO,
   uServiceProc,
-  uFixDups,
+  uFixErrs,
   uTableUtils;
 
 type
@@ -20,7 +20,6 @@ type
     function ChangeOriginal : Boolean;
   end;
 
-type
 
   // Класс исправления ошибок в таблицах ADS
   //TFixADSTables = class(TInterfacedObject)
@@ -90,9 +89,7 @@ uses
   DB,
   FuncPr,
   SasaINiFile,
-  uUseful,
-  uIFixDmgd;
-
+  uUseful;
 
 constructor TFixADSTables.Create(IniPath: string; FixMode: TFixWorkMode = [fxShowUI, fxStandAlone]; Path2Fix: string = '');
 var
